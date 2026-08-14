@@ -8,6 +8,11 @@
   <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a>.
 </p>
 
+> This fork is based on
+> [dataelement/dsh-desktop](https://github.com/dataelement/dsh-desktop),
+> keeps the custom whale icon from the original local `dsh-desktop` project, and
+> keeps auto-updates disabled until a publish endpoint is configured.
+
 <p align="center">
   <a href="README.md">English</a> · <a href="README.zh.md">简体中文</a>
 </p>
