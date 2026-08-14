@@ -1,115 +1,193 @@
-# DSH Desktop — 基于 DeepSeek Harness 的个人桌面客户端
+<h1 align="center">
+  <img src="build/icon.png" width="64" alt="DSH Desktop logo" valign="middle" />
+  DSH Desktop
+</h1>
 
-把 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 官方 Web UI
-（`dsh web`）封装成 Windows 桌面应用：**界面零改动**，官方 Harness 界面原样呈现，
-桌面壳层负责拉起/托管服务器、托盘、启动级配置与日志查看。
+<p align="center">
+  A local-first, cross-platform desktop shell for
+  <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a>.
+</p>
 
-> 封装，而不是重写：模型、会话、主题、代理人格、工具等一切都在官方 Web UI 里完成。
+<p align="center">
+  <a href="README.md">English</a> · <a href="README.zh.md">简体中文</a>
+</p>
 
-## 功能
+<p align="center">
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-171513.svg" /></a>
+  <img alt="macOS" src="https://img.shields.io/badge/macOS-Apple%20Silicon%20%7C%20Intel-171513.svg" />
+  <img alt="Windows" src="https://img.shields.io/badge/Windows-x64-171513.svg" />
+</p>
 
-- 🖥️ **自带运行时**：应用自动拉起 `dsh web` 子进程（`--profile web`），
-  用 Electron 自带的 Node 启动，**目标机器无需安装 Node/pnpm**。
-- 🔌 **复用检测**：`127.0.0.1:3080` 上已有官方实例时直接复用，不重复启动；
-  端口被其他程序占用时自动顺延找空闲端口。
-- 🗔 **托盘常驻**：关闭窗口最小化到托盘，服务器保持后台运行；
-  托盘菜单可一键显示窗口 / 在浏览器打开 / 重启 / 停止 / 退出。
-- ⚙️ **壳层设置页**（非官方界面）：API Key、Base URL、`DSH_HOME`、工作目录、
-  端口、附加模式、遥测开关、`DSH_TOOLS_MODE`。
-- 📜 **实时日志面板**：子进程 stdout/stderr 环形缓冲 + 设置页实时滚动。
-- 🛡️ **安全**：主窗口与官方页面隔离（`contextIsolation` + `sandbox`），
-  外部链接一律交给系统浏览器；退出时优雅停止并清理整个子进程树。
+![DSH Desktop model provider settings](docs/images/model-provider-settings-v011.png)
 
-## 快速开始
+<p align="center"><strong>Beyond official DeepSeek models, DSH Desktop supports mainstream third-party model providers—with more DSH-powered desktop experiences coming soon.</strong></p>
 
-```sh
-# 1. 安装依赖（postinstall 会自动把官方 Harness runtime 装进 resources/harness）
+DSH Desktop packages the local DeepSeek Harness web experience as a desktop application. It launches a local Harness instance automatically, manages a random loopback port, persists profiles, plugins, and sessions, and opens the full interface as soon as Harness is ready. Project workspaces are added and managed entirely in the Harness interface.
+
+> [!IMPORTANT]
+> DSH Desktop is currently an early preview and depends on the rapidly evolving `@deepseek-ai/dsh@0.1.0-rc.6`. macOS releases are code-signed and notarized by Apple; current installers are distributed through the official website.
+
+## Download
+
+Download DSH Desktop for macOS and Windows from the [official website](https://www.dshdesktop.com/#download).
+
+Installed macOS and Windows builds check for updates automatically after startup and every six hours. Updates download in the background and prompt you to restart when they are ready. You can also choose **Check for Updates…** from the application menu.
+
+## Community
+
+<p align="center">
+  Scan the QR code below with WeChat to join the DSH Desktop community group.<br />
+  <img src="docs/images/wechat-group.png" width="220" alt="DSH Desktop WeChat group QR code" /><br />
+  Prefer Discord? <a href="https://discord.gg/he2gAKCpj">Join the DSH Desktop Discord community</a>.
+</p>
+
+## Why this project exists
+
+DeepSeek Harness already provides a complete agent runtime and Web UI. DSH Desktop does not reimplement Harness; it supplies the host capabilities needed for a desktop product:
+
+- Run without manually starting a CLI or managing local ports
+- Create an application-owned Harness launch directory automatically at startup
+- Add and manage project workspaces through Harness's built-in directory picker
+- Manage the Harness child process, readiness checks, logs, and shutdown in one place
+- Store profiles, plugins, and sessions outside the application installation directory so upgrades do not remove user data
+- Provide packaging entry points for macOS and Windows
+
+## Features
+
+- Opens directly into Harness without an additional landing page
+- Starts without an initial directory prompt by creating and reusing an internal launch directory
+- Offers retry, log viewing, and exit actions when Harness fails to start
+- Provides Harness menu actions for restarting the child process and viewing its log
+- Gracefully terminates the Harness child process when the desktop app exits
+- Listens only on a random `127.0.0.1` port for each launch
+- Removes Node.js privileges from the renderer and enables `contextIsolation`, sandboxing, and navigation restrictions
+- Uses the DSH brand logo consistently in the desktop window and Harness sidebar
+- Imports and exports complete custom Agent presets as portable [`.dshpreset` packages](docs/preset-packages.md), with conflict checks and a trust warning before installation
+- Includes a production DSH app icon in macOS ICNS and Windows ICO formats
+
+## Model providers
+
+During initial setup, you can choose a model provider and enter its API key directly. DSH Desktop uses the real Harness Settings and Credentials APIs: the key is written only to the credential store, the corresponding provider route is created automatically, and its built-in model catalog is inherited without requiring model IDs to be entered manually.
+
+The initial setup currently includes:
+
+| Type | Providers |
+| --- | --- |
+| Model vendors | DeepSeek, OpenAI, Anthropic, Google Gemini, xAI, Moonshot/Kimi, MiniMax, Zhipu GLM, Mistral AI |
+| Model aggregation | OpenRouter |
+| Inference platforms | Groq, Together AI |
+
+Additional built-in or custom providers can be added from **Settings → Models** in Harness.
+
+## Quick start
+
+### Requirements
+
+- Node.js 22 or later
+- npm
+- macOS on Apple Silicon or Intel, or Windows x64
+
+### Local development
+
+```bash
+git clone https://github.com/dataelement/dsh-desktop.git
+cd dsh-desktop
 npm install
-
-# 2. 启动桌面应用（会自动拉起 dsh web 并打开官方界面窗口）
-npm start
-
-# 3.（可选）打开主窗口 DevTools 观察启动细节
-npm run start:log
+npm run dev
 ```
 
-第一次使用前，请先在官方界面或本应用设置页里填入 `DEEPSEEK_API_KEY`。
+`npm install` runs `patch-package` to reapply DSH Desktop's model-provider onboarding, preset package transfer, and sidebar branding, installs the brand asset, and then installs the Electron runtime.
 
-## 打包 Windows 应用
+### Quality checks
 
-```sh
-npm run dist           # 产出 portable 单文件 exe + NSIS 安装包（dist/ 目录）
-npm run dist:portable  # 只产出便携版 exe
+```bash
+npm test
+npm run typecheck
+npm run build
 ```
 
-打包产物自带 Harness runtime（`extraResources → resources/harness`），
-拷到别的 Windows 机器即可运行，无需安装 Node。
+### Packaging
 
-## 设置项
+```bash
+# Generate unsigned DMG and ZIP artifacts for the current Mac architecture
+npm run package:mac
 
-| 设置 | 含义 | 默认 |
-|---|---|---|
-| `preferredPort` | 首选端口；被 dsh web 占用则复用，被其他程序占用则顺延 | `3080` |
-| `attachMode` | `auto`：复用已运行的官方实例；`always-spawn`：总是自启 | `auto` |
-| `apiKey` | `DEEPSEEK_API_KEY`，注入子进程环境 | 空 |
-| `baseUrl` | `DEEPSEEK_BASE_URL`（可选） | 空 |
-| `dshHome` | `DSH_HOME` 数据目录（会话/存储），留空用默认 `~/.dsh` | 空 |
-| `workspace` | 子进程 cwd（影响 system prompt 的 `{{cwd}}` 与文件工具根） | `<userData>/workspace` |
-| `toolsMode` | `DSH_TOOLS_MODE`：`native` / `code` / `both` | 空 |
-| `disableTelemetry` | 设 `DSH_TELEMETRY_DISABLED=1` | 开 |
-| `closeToTray` | 关闭窗口最小化到托盘 | 开 |
+# Run each command on a Mac or CI runner with the matching architecture
+npm run package:mac:arm64
+npm run package:mac:x64
 
-设置保存在 `%APPDATA%/DSH Desktop/settings.json`。
-
-## 工作原理
-
-桌面壳层等价于执行：
-
-```sh
-node <runtime>/@deepseek-ai/dsh/lib/bin.js \
-  --profile web --host 127.0.0.1 --port <port>
+# Generate NSIS and Portable artifacts on a Windows x64 machine or runner
+npm run package:win
 ```
 
-- 运行时解析：打包后取 `resources/harness/runtime`（extraResources），开发期取
-  `resources/harness/runtime` 或 `node_modules/@deepseek-ai/dsh`。
-- 子进程通过 `ELECTRON_RUN_AS_NODE=1` + `--expose-internals` 复用 Electron 自带的 Node
-  （`--expose-internals` 是 HMR 服务读取 Node 内部模块所需）。
-- 就绪检测：轮询 `http://127.0.0.1:<port>/`，以首页是否包含官方注入的
-  `__DSH_BOOT__` 标记判定（该标记只有 `dsh web` 才会注入）。
-- 退出：SIGTERM → 宽限 3s → Windows 下 `taskkill /T /F` 清理整棵进程树。
+Harness includes architecture-specific native modules. Dependencies must be reinstalled and built on the matching platform for macOS ARM64, macOS Intel, and Windows x64. The architecture-specific scripts validate the current `platform/arch` before packaging to prevent artifacts that appear successful but are missing native dependencies.
 
-## 目录结构
+## Runtime architecture
 
-```
-dsh-desktop/
-├── src/
-│   ├── main/            # Electron 主进程
-│   │   ├── index.js     #   入口：窗口/生命周期/IPC
-│   │   ├── server.js    #   dsh web 子进程管理器（端口/就绪/日志/清理）
-│   │   ├── settings.js  #   设置存储
-│   │   ├── menu.js      #   应用菜单
-│   │   ├── tray.js      #   系统托盘
-│   │   └── version.js
-│   ├── preload/         # 设置窗口 IPC 桥（官方页面不加载）
-│   └── renderer/        # 壳层设置页（HTML/CSS/JS）
-├── scripts/
-│   └── install-harness.mjs   # postinstall：安装 Harness runtime 到 resources/harness/runtime
-├── resources/harness/runtime/ # 自带 Harness runtime（postinstall 生成，不入库）
-└── package.json              # electron-builder 配置（portable + nsis）
+```text
+DSH Desktop (Electron Main)
+├── Application-owned launch directory
+├── Harness child-process lifecycle
+├── Random loopback port and readiness checks
+├── Native logging and recovery actions
+└── Hardened BrowserWindow
+     └── http://127.0.0.1:<random>  DeepSeek Harness Web UI
+
+Electron userData
+├── launch-root/
+├── logs/harness.log
+└── harness/
+    ├── profiles/
+    ├── sessions/
+    └── Plugins and user data
 ```
 
-## 常见问题
+Harness runs in a separate Electron Node child process. The `--expose-internals` permission required by Cordis HMR is granted only to that child process and never to the web renderer.
 
-- **设置页显示“未找到 dsh web 运行时”** → 项目里执行 `npm run postinstall`
-  或 `node scripts/install-harness.mjs`。
-- **端口被占用** → 应用会自动顺延；也可在设置里改首选端口或切换附加模式。
-- **没配 API Key** → 在官方界面（设置 → 模型/凭据）或本应用设置页填入
-  `DEEPSEEK_API_KEY`，保存后重启服务器。
-- **想要全新会话数据** → 设置页把 `DSH_HOME` 指向新目录。
-- **异常退出后残留 electron 进程** → 在普通终端执行
-  `taskkill /F /IM electron.exe`（会连带清理残留的 dsh web 子进程），再重新启动。
+## Project structure
 
-## 许可
+```text
+src/main/             Electron main process, windows, and Harness lifecycle
+src/shared/           Shared runtime types
+patches/              Reproducible UI customizations for the pinned DSH version
+scripts/              Brand-asset installation and target-platform packaging checks
+test/                 Settings, runtime, security, and provider coverage tests
+build/                Application icon assets
+```
 
-- 本壳层：MIT（见 LICENSE）。
-- 官方 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)：MIT。
+## Current validation status
+
+- macOS Apple Silicon: development workflow, real Harness startup, DMG packaging, code signing, Apple notarization, and mounted artifact verified
+- macOS Intel: packaging configuration and platform checks provided; runtime verification still requires an Intel Mac or runner
+- Windows x64: NSIS/Portable configuration and platform checks provided; runtime verification still requires a Windows runner
+- Windows ARM64: not currently supported
+- Automatic updates: not yet integrated
+
+## Upstream version and patches
+
+The project currently pins `@deepseek-ai/dsh@0.1.0-rc.6`. The initial provider list and desktop preset-transfer surface are captured with [`patch-package`](https://github.com/ds300/patch-package) under [`patches/`](patches/) rather than relying on untracked changes in `node_modules`.
+
+When upgrading DSH:
+
+1. Verify the upstream Settings, Credentials, and Provider Directory contracts.
+2. Reapply or rewrite the customized onboarding interface.
+3. Regenerate the patch.
+4. Run regression checks against a real Harness startup and provider configuration flow.
+
+## Contributing
+
+Issues and pull requests are welcome. Before submitting a change, run at least:
+
+```bash
+npm test
+npm run typecheck
+npm run build
+```
+
+Never include real API keys in issues, logs, screenshots, or test data.
+
+## License
+
+This project is open source under the [MIT License](LICENSE).
+
+DeepSeek Harness and its dependencies remain subject to their respective upstream licenses and trademark policies. DSH Desktop is an independent community desktop wrapper.
