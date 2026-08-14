@@ -114,10 +114,11 @@ export class ServerManager extends EventEmitter {
     const text = chunk.toString('utf8')
     for (const line of text.split(/\r?\n/)) {
       if (!line) continue
-      this._logs.push({ ts: Date.now(), stream, text: line })
+      const entry = { ts: Date.now(), stream, text: line }
+      this._logs.push(entry)
+      this.emit('log', entry)
     }
     if (this._logs.length > MAX_LOG_LINES) this._logs.splice(0, this._logs.length - MAX_LOG_LINES)
-    this.emit('log', { ts: this._logs[this._logs.length - 1].ts, stream, text: this._logs[this._logs.length - 1].text })
   }
 
   // ── 生命周期 ─────────────────────────────────────────────

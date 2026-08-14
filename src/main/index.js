@@ -172,8 +172,7 @@ async function bootstrap() {
       if (state.running) ensureWindow()
     })
     await server.start()
-    // 仅在服务器真正就绪时才打开主窗口，避免把连接失败页摆到用户面前。
-    if (server.state().running) ensureWindow()
+    // 主窗口由上面的 status 监听在服务器真正就绪时创建，避免把连接失败页摆到用户面前。
     // macOS 惯例：无窗口时保持应用存活。
     app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) ensureWindow() })
   })

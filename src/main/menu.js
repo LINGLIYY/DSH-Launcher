@@ -1,5 +1,5 @@
 /** 主窗口应用菜单。 */
-import { app, shell, Menu } from 'electron'
+import { app, shell, dialog, Menu } from 'electron'
 import { DSH_DESKTOP_VERSION } from './version.js'
 
 export function buildAppMenu({ openSettings, onQuit }) {
@@ -40,7 +40,21 @@ export function buildAppMenu({ openSettings, onQuit }) {
         {
           label: '关于 DSH Desktop',
           click: () => {
-            app.showAboutPanel?.()
+            if (process.platform === 'darwin' && typeof app.showAboutPanel === 'function') {
+              app.showAboutPanel()
+              return
+            }
+            dialog.showMessageBox({
+              type: 'info',
+              title: '关于 DSH Desktop',
+              message: 'DSH Desktop',
+              detail: [
+                `版本 ${DSH_DESKTOP_VERSION}`,
+                '基于 DeepSeek Harness（官方 Web UI）',
+                `Electron ${process.versions.electron} · Node ${process.versions.node} · Chromium ${process.versions.chrome}`,
+              ].join('\n'),
+              buttons: ['确定'],
+            })
           },
         },
       ],
