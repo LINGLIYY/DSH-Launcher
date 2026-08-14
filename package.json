@@ -121,7 +121,8 @@
       "createStartMenuShortcut": true
     },
     "portable": {
-      "artifactName": "${productName}-${version}-portable.${ext}"
+      "artifactName": "${productName}-${version}-portable.${ext}",
+      "unpackDirName": "dsh-desktop-portable"
     }
   }
 }
