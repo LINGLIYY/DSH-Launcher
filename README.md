@@ -93,8 +93,7 @@ dsh-desktop/
 │   ├── preload/         # 设置窗口 IPC 桥（官方页面不加载）
 │   └── renderer/        # 壳层设置页（HTML/CSS/JS）
 ├── scripts/
-│   ├── install-harness.mjs   # postinstall：安装 Harness runtime 到 resources/harness/runtime
-│   └── make-icon.mjs         # 生成应用图标（纯 Node 手写 PNG）
+│   └── install-harness.mjs   # postinstall：安装 Harness runtime 到 resources/harness/runtime
 ├── resources/harness/runtime/ # 自带 Harness runtime（postinstall 生成，不入库）
 └── package.json              # electron-builder 配置（portable + nsis）
 ```

@@ -9,12 +9,11 @@
   "license": "MIT",
   "scripts": {
     "postinstall": "node scripts/install-harness.mjs",
-    "icon": "node scripts/make-icon.mjs",
     "start": "electron .",
     "start:log": "electron . --log",
-    "pack": "npm run icon && electron-builder --dir",
-    "dist": "npm run icon && electron-builder --win portable nsis",
-    "dist:portable": "npm run icon && electron-builder --win portable"
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win portable nsis",
+    "dist:portable": "electron-builder --win portable"
   },
   "engines": {
     "node": ">=22.19"
