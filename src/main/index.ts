@@ -4,8 +4,10 @@ import {
   BrowserWindow,
   dialog,
   Menu,
+  nativeImage,
   nativeTheme,
   shell,
+  Tray,
   type MessageBoxOptions
 } from 'electron'
 import { HarnessRuntime } from './runtime/harness-runtime'
@@ -21,6 +23,7 @@ import {
 import type { RuntimeSnapshot } from '../shared/contracts'
 
 let mainWindow: BrowserWindow | undefined
+let tray: Tray | undefined
 let runtime: HarnessRuntime
 let launchDirectory: string
 let quitting = false
@@ -87,6 +90,12 @@ function createWindow(): BrowserWindow {
     window.setTitle('')
   })
   secureWindow(window)
+  window.on('close', (event) => {
+    if (!quitting && tray) {
+      event.preventDefault()
+      window.hide()
+    }
+  })
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = undefined
   })
@@ -109,6 +118,49 @@ async function openHarness(url: string): Promise<void> {
 async function launchHarness(): Promise<void> {
   mainWindow?.hide()
   await runtime.start(launchDirectory)
+}
+
+async function showMainWindow(): Promise<void> {
+  const snapshot = runtime?.snapshot()
+  if (snapshot?.phase === 'ready' && snapshot.url) {
+    await openHarness(snapshot.url)
+  } else if (snapshot?.phase === 'idle') {
+    await launchHarness()
+  }
+}
+
+async function quitApp(): Promise<void> {
+  if (quitting) return
+  quitting = true
+  stopUpdateManager()
+  await runtime?.stop()
+  app.quit()
+}
+
+function createTray(): void {
+  const image = nativeImage.createFromPath(desktopIconPath())
+  const trayImage = image.isEmpty() ? image : image.resize({ width: 16, height: 16 })
+  tray = new Tray(trayImage)
+  tray.setToolTip('DSH Desktop')
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      {
+        label: '显示 DSH Desktop',
+        click: () => void showMainWindow().catch(showUnexpectedError)
+      },
+      {
+        label: '重启 Harness',
+        click: () => void launchHarness().catch(showUnexpectedError)
+      },
+      {
+        label: '显示 Harness 日志',
+        click: () => shell.showItemInFolder(join(app.getPath('logs'), 'harness.log'))
+      },
+      { type: 'separator' },
+      { label: '退出', click: () => void quitApp() }
+    ])
+  )
+  tray.on('double-click', () => void showMainWindow().catch(showUnexpectedError))
 }
 
 function showUnexpectedError(error: unknown): void {
@@ -259,6 +311,7 @@ async function bootstrap(): Promise<void> {
     }
   })
   installMenu()
+  createTray()
   await launchHarness()
   startUpdateManager({
     prepareToInstall: async () => {
@@ -274,10 +327,14 @@ if (!singleInstance) {
   app.quit()
 } else {
   app.setName('DSH Desktop')
+  app.commandLine.appendSwitch('lang', 'zh-CN')
+  process.env.LANG = 'zh_CN.UTF-8'
   app.on('second-instance', () => {
     const snapshot = runtime?.snapshot()
     if (snapshot?.phase === 'ready' && snapshot.url) {
       void openHarness(snapshot.url).catch(showUnexpectedError)
+    } else if (snapshot?.phase === 'idle') {
+      void launchHarness().catch(showUnexpectedError)
     }
   })
   app.whenReady().then(bootstrap).catch((error: unknown) => {
@@ -293,7 +350,7 @@ if (!singleInstance) {
     }
   })
   app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') app.quit()
+    if (!tray) app.quit()
   })
   app.on('before-quit', (event) => {
     if (quitting || !runtime) return

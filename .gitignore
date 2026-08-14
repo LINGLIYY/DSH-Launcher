@@ -2,6 +2,7 @@ node_modules/
 resources/harness/
 .npm-cache/
 dist/
+dist2/
 out/
 .tmp-upstream-dsh/
 *.log
