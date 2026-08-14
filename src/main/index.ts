@@ -165,7 +165,7 @@ function createTray(): void {
 
 function showUnexpectedError(error: unknown): void {
   const message = error instanceof Error ? error.stack ?? error.message : String(error)
-  dialog.showErrorBox('DSH Desktop encountered an error', message)
+  dialog.showErrorBox('DSH Desktop 遇到错误', message)
 }
 
 async function showRuntimeFailure(snapshot: RuntimeSnapshot): Promise<void> {
@@ -176,12 +176,12 @@ async function showRuntimeFailure(snapshot: RuntimeSnapshot): Promise<void> {
     while (!quitting && runtime.snapshot().phase === 'failed') {
       const options: MessageBoxOptions = {
         type: 'error',
-        title: 'Harness could not start',
+        title: 'Harness 无法启动',
         message: snapshot.message,
         detail: snapshot.launchDirectory
-          ? `Launch directory: ${snapshot.launchDirectory}\n\nYou can retry or inspect the Harness log.`
-          : 'You can retry or inspect the Harness log.',
-        buttons: ['Retry', 'Show Log', 'Quit'],
+          ? `启动目录：${snapshot.launchDirectory}\n\n你可以重试，或查看 Harness 日志。`
+          : '你可以重试，或查看 Harness 日志。',
+        buttons: ['重试', '显示日志', '退出'],
         defaultId: 0,
         cancelId: 2,
         noLink: true
@@ -239,12 +239,12 @@ function installMenu(): void {
       label: 'Harness',
       submenu: [
         {
-          label: 'Restart Harness',
+          label: '重启 Harness',
           accelerator: 'CmdOrCtrl+Shift+R',
           click: () => void launchHarness().catch(showUnexpectedError)
         },
         {
-          label: 'Show Harness Log',
+          label: '显示 Harness 日志',
           click: () => shell.showItemInFolder(join(app.getPath('logs'), 'harness.log'))
         },
         ...(process.platform === 'darwin'
@@ -263,31 +263,37 @@ function installMenu(): void {
       ]
     },
     {
-      label: 'Edit',
+      label: '编辑',
       submenu: [
-        { role: 'undo' },
-        { role: 'redo' },
+        { role: 'undo', label: '撤销' },
+        { role: 'redo', label: '重做' },
         { type: 'separator' },
-        { role: 'cut' },
-        { role: 'copy' },
-        { role: 'paste' },
-        { role: 'selectAll' }
+        { role: 'cut', label: '剪切' },
+        { role: 'copy', label: '复制' },
+        { role: 'paste', label: '粘贴' },
+        { role: 'selectAll', label: '全选' }
       ]
     },
     {
-      label: 'View',
+      label: '视图',
       submenu: [
-        { role: 'reload' },
-        { role: 'toggleDevTools' },
+        { role: 'reload', label: '重新加载' },
+        { role: 'toggleDevTools', label: '开发者工具' },
         { type: 'separator' },
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
+        { role: 'resetZoom', label: '重置缩放' },
+        { role: 'zoomIn', label: '放大' },
+        { role: 'zoomOut', label: '缩小' },
         { type: 'separator' },
-        { role: 'togglefullscreen' }
+        { role: 'togglefullscreen', label: '全屏' }
       ]
     },
-    { label: 'Window', submenu: [{ role: 'minimize' }, { role: 'close' }] }
+    {
+      label: '窗口',
+      submenu: [
+        { role: 'minimize', label: '最小化' },
+        { role: 'close', label: '关闭' }
+      ]
+    }
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
