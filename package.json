@@ -1,0 +1,64 @@
+{
+  "name": "dsh-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH Desktop — 基于 DeepSeek Harness 的个人桌面客户端（封装官方 Web UI）",
+  "main": "src/main/index.js",
+  "type": "module",
+  "author": "dsh-desktop",
+  "license": "MIT",
+  "scripts": {
+    "postinstall": "node scripts/install-harness.mjs",
+    "icon": "node scripts/make-icon.mjs",
+    "start": "electron .",
+    "start:log": "electron . --log",
+    "pack": "npm run icon && electron-builder --dir",
+    "dist": "npm run icon && electron-builder --win portable nsis",
+    "dist:portable": "npm run icon && electron-builder --win portable"
+  },
+  "engines": {
+    "node": ">=22.19"
+  },
+  "build": {
+    "appId": "dev.dsh.desktop",
+    "productName": "DSH Desktop",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json",
+      "build/icon.png"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/harness",
+        "to": "harness",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        "portable",
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.exe"
+    }
+  },
+  "devDependencies": {
+    "electron": "^43.4.0",
+    "electron-builder": "^26.15.3"
+  }
+}
