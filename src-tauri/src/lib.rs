@@ -216,6 +216,11 @@ fn open_path(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn open_dir(path: String) -> Result<(), String> {
+    harness::open_path(std::path::Path::new(&path))
+}
+
+#[tauri::command]
 fn list_sessions(filter: Option<String>) -> Result<Vec<sessions::SessionInfo>, String> {
     Ok(sessions::list(filter.unwrap_or_default().as_str()))
 }
@@ -291,6 +296,41 @@ fn get_dsh_settings() -> Result<String, String> {
 fn set_dsh_settings(text: String) -> Result<(), String> {
     let p = std::path::Path::new(&default_dsh_home()).join("settings.yaml");
     std::fs::write(&p, text).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_cordis_patch() -> Result<String, String> {
+    let p = std::path::Path::new(&default_dsh_home())
+        .join("profiles")
+        .join("web")
+        .join("cordis.patch.yml");
+    std::fs::read_to_string(&p).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_cordis_patch(text: String) -> Result<(), String> {
+    let p = std::path::Path::new(&default_dsh_home())
+        .join("profiles")
+        .join("web")
+        .join("cordis.patch.yml");
+    std::fs::write(&p, text).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_env_info(state: tauri::State<'_, HarnessState>) -> serde_json::Value {
+    let inner = state.inner.lock().unwrap();
+    let exe = std::env::current_exe()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    serde_json::json!({
+        "dsh_path": harness::find_dsh().unwrap_or_default(),
+        "dsh_home": inner.dsh_home,
+        "workspace": inner.workspace,
+        "port": inner.port,
+        "logs_dir": default_logs_dir(),
+        "sessions_dir": format!("{}\\sessions", inner.dsh_home),
+        "exe_path": exe,
+    })
 }
 
 #[tauri::command]
@@ -661,6 +701,7 @@ pub fn run() {
             save_text_file,
             read_text_file,
             open_path,
+            open_dir,
             list_sessions,
             get_session,
             delete_session,
@@ -685,6 +726,9 @@ pub fn run() {
             open_plugin_folder,
             get_dsh_settings,
             set_dsh_settings,
+            get_cordis_patch,
+            set_cordis_patch,
+            get_env_info,
             get_launcher_prefs,
             set_launcher_prefs,
             set_autostart,

@@ -296,6 +296,7 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
       <div class="nav-item" data-sec="endpoints">多端管理</div>
       <div class="nav-item" data-sec="runtime">运行与用量</div>
       <div class="nav-item" data-sec="maintenance">数据与维护</div>
+      <div class="nav-item" data-sec="about">环境信息</div>
     </div>
     <div class="settings-content">
 
@@ -458,6 +459,17 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
           <div class="si-desc">保存会覆盖原文件，请确认 YAML 格式正确后再保存。</div>
         </div>
 
+        <h3 style="margin-top:20px">cordis.patch.yml 编辑器（插件注册层）</h3>
+        <div class="setting-item">
+          <div class="si-desc">直接读写 profile 的 cordis.patch.yml，用于手动调整插件的 insert/disable 配置，修改后需重启 DSH 生效。</div>
+          <textarea id="cordisPatchText" rows="10" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--border-color);border-radius:3px;font-family:Consolas,monospace;font-size:12px;line-height:1.5;resize:vertical"></textarea>
+          <div style="display:flex;gap:6px;margin-top:6px">
+            <button class="btn-small" id="btnReloadCordis">重新加载</button>
+            <button class="btn-primary" id="btnSaveCordis">保存</button>
+          </div>
+          <div class="si-desc">保存会覆盖原文件，请确认 YAML 格式正确后再保存。</div>
+        </div>
+
         <h3 style="margin-top:20px">资源限额与用量</h3>
         <div class="setting-item"><div class="si-desc">DSH 未暴露独立的资源限额配置，此项待官方能力确认后接入；下方用量概览同样待接入。</div></div>
 <h3 style="margin-top:20px">用量概览（当前端）</h3>
@@ -514,6 +526,12 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
           <button class="btn-small" id="btnResetDsh">仅重置当前端 DSH 配置</button>
           <button class="btn-danger" id="btnResetAll">重置全部配置</button>
         </div>
+      </div>
+
+      <div class="settings-section" data-sec="about">
+        <h3>环境信息</h3>
+        <div id="envInfo"><div class="si-desc">加载中...</div></div>
+        <div class="si-desc" style="margin-top:8px">这些路径用于排查启动、插件与会话问题。点击“打开”在资源管理器中定位，点击“复制”复制到剪贴板。</div>
       </div>
 
     </div>
@@ -982,8 +1000,9 @@ document.querySelectorAll(".settings-nav .nav-item").forEach(item=>{
     item.classList.add("active");
     document.querySelectorAll(".settings-section").forEach(s=>s.classList.remove("active"));
     document.querySelector(`.settings-section[data-sec="${item.dataset.sec}"]`).classList.add("active");
-    if(item.dataset.sec==="runtime"){refreshUsage();loadDshSettings()}
+    if(item.dataset.sec==="runtime"){refreshUsage();loadDshSettings();loadCordis()}
     if(item.dataset.sec==="endpoints")renderEndpointList();
+    if(item.dataset.sec==="about")loadEnvInfo();
   };
 });
 
@@ -1602,6 +1621,49 @@ $("btnSaveDshSettings")?.addEventListener("click",async()=>{
     appendLog("[配置] settings.yaml 已保存，重启 DSH 后生效","log-ready");
   }catch(e){appendLog("保存失败："+e,"log-error")}
 });
+async function loadCordis(){
+  try{ $("cordisPatchText").value = await invoke("get_cordis_patch"); }
+  catch(e){ $("cordisPatchText").value = "读取失败：" + e; }
+}
+$("btnReloadCordis")?.addEventListener("click",loadCordis);
+$("btnSaveCordis")?.addEventListener("click",async()=>{
+  try{
+    await invoke("set_cordis_patch",{text:$("cordisPatchText").value});
+    appendLog("[配置] cordis.patch.yml 已保存，重启 DSH 后生效","log-ready");
+  }catch(e){appendLog("保存失败："+e,"log-error")}
+});
+async function loadEnvInfo(){
+  const box=$("envInfo");box.innerHTML='<div class="si-desc">加载中...</div>';
+  let info={},version="";
+  try{info=await invoke("get_env_info")}catch(e){box.innerHTML='<div class="si-desc">读取环境信息失败：'+escapeHtml(String(e))+'</div>';return}
+  try{const v=await invoke("dsh_version");version=v.version||""}catch(e){}
+  const rows=[
+    {label:"DSH 路径",value:info.dsh_path||"未检测到",dir:null},
+    {label:"DSH 版本",value:version||"未知",dir:null},
+    {label:"DSH_HOME",value:info.dsh_home||"",dir:info.dsh_home||""},
+    {label:"工作区",value:info.workspace||"",dir:info.workspace||""},
+    {label:"访问端口",value:String(info.port||7602),dir:null},
+    {label:"日志目录",value:info.logs_dir||"",dir:info.logs_dir||""},
+    {label:"会话目录",value:info.sessions_dir||"",dir:info.sessions_dir||""},
+    {label:"启动器程序",value:info.exe_path||"",dir:info.exe_path?(info.exe_path.replace(/[\\/][^\\/]*$/,"")):null}
+  ];
+  box.innerHTML="";
+  rows.forEach(r=>{
+    const row=document.createElement("div");
+    row.style.cssText="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px dashed var(--border-color)";
+    const label=document.createElement("div");label.style.cssText="width:110px;flex:none;font-size:12px;color:var(--text-secondary)";label.textContent=r.label;
+    const val=document.createElement("div");val.style.cssText="flex:1;font-size:12px;font-family:Consolas,monospace;word-break:break-all";val.textContent=r.value;
+    const copyBtn=document.createElement("button");copyBtn.className="btn-small";copyBtn.textContent="复制";
+    copyBtn.onclick=()=>copyToClipboard(r.value,r.label);
+    row.appendChild(label);row.appendChild(val);row.appendChild(copyBtn);
+    if(r.dir){
+      const openBtn=document.createElement("button");openBtn.className="btn-small";openBtn.textContent="打开";
+      openBtn.onclick=async()=>{try{await invoke("open_dir",{path:r.dir})}catch(e){appendLog("打开失败："+e,"log-error")}};
+      row.appendChild(openBtn);
+    }
+    box.appendChild(row);
+  });
+}
 ["limitToken","limitSession","limitDaily"].forEach(id=>{const el=$(id);if(!el)return;el.oninput=function(){$(id+"Val").textContent=(+this.value).toLocaleString()}});
 
 /* ============================================================
