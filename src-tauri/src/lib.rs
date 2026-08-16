@@ -25,6 +25,8 @@ pub struct HarnessInner {
     pub dsh_home: String,
     pub log_path: PathBuf,
     pub logs: VecDeque<LogLine>,
+    pub wsl_distro: Option<String>,
+    pub wsl_port: Option<u16>,
 }
 
 impl HarnessInner {
@@ -40,6 +42,8 @@ impl HarnessInner {
             dsh_home: default_dsh_home(),
             log_path: PathBuf::from(default_logs_dir()).join("launcher.log"),
             logs: VecDeque::new(),
+            wsl_distro: None,
+            wsl_port: None,
         }
     }
 }
@@ -85,10 +89,11 @@ async fn start_harness(
     app: AppHandle,
     workspace: Option<String>,
     port: Option<u16>,
+    endpoint: Option<harness::EndpointSpec>,
 ) -> Result<serde_json::Value, String> {
     let ws = workspace.unwrap_or_else(default_workspace);
     let port = port.unwrap_or(7602);
-    harness::start(app, ws, port).await?;
+    harness::start(app, ws, port, endpoint).await?;
     Ok(serde_json::json!({ "status": "starting" }))
 }
 
@@ -256,7 +261,7 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                         let inner = state.inner.lock().unwrap();
                         (inner.workspace.clone(), inner.port)
                     };
-                    let _ = harness::start(app2, ws, port).await;
+                    let _ = harness::start(app2, ws, port, None).await;
                 });
             }
             "stop" => {
@@ -308,7 +313,7 @@ pub fn run() {
                     let inner = state.inner.lock().unwrap();
                     (inner.workspace.clone(), inner.port)
                 };
-                let _ = harness::start(handle, ws, port).await;
+                let _ = harness::start(handle, ws, port, None).await;
             });
             Ok(())
         })

@@ -1038,7 +1038,7 @@ $("btnStart").onclick=async function(){
   const ep=currentEndpoint();
   appendLog(`正在启动「${ep.name}」的 DSH 基座（端口 ${ep.port}）...`,"log-start");
   try{
-    await invoke("start_harness",{workspace:$("workspaceInput").value,port:ep.port,endpoint_id:ep.id});
+    await invoke("start_harness",{workspace:$("workspaceInput").value,port:ep.port,endpoint_id:ep.id,endpoint:ep});
     if(!HAS_TAURI){
       setTimeout(()=>{
         appendLog(`DSH Web 服务就绪：http://127.0.0.1:${ep.port}/`,"log-ready");

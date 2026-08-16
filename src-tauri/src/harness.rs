@@ -5,6 +5,17 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
+#[derive(serde::Deserialize)]
+pub struct EndpointSpec {
+    #[serde(rename = "type")]
+    pub etype: String,
+    pub distro: Option<String>,
+    pub path: String,
+    pub workspace: Option<String>,
+    #[serde(rename = "dshHome")]
+    pub dsh_home: Option<String>,
+}
+
 fn find_dsh() -> Result<String> {
     if let Ok(appdata) = std::env::var("APPDATA") {
         let cand = PathBuf::from(&appdata).join("npm").join("dsh.cmd");
@@ -110,13 +121,40 @@ pub fn open_path(path: &Path) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-pub async fn start(app: AppHandle, workspace: String, port: u16) -> Result<(), String> {
-    let dsh_path = tauri::async_runtime::spawn_blocking(find_dsh)
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())?;
+pub async fn start(
+    app: AppHandle,
+    workspace: String,
+    port: u16,
+    endpoint: Option<EndpointSpec>,
+) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-    let dsh_home = default_dsh_home();
+    let is_wsl = endpoint.as_ref().map(|e| e.etype == "wsl").unwrap_or(false);
+    let distro = endpoint.as_ref().and_then(|e| e.distro.clone()).filter(|d| !d.is_empty());
+    let ep_path = endpoint.as_ref().map(|e| e.path.clone()).unwrap_or_default();
+    let ep_home = endpoint.as_ref().and_then(|e| e.dsh_home.clone()).filter(|h| !h.is_empty());
+
+    let dsh_path = if is_wsl {
+        if ep_path.is_empty() {
+            return Err("WSL 端未检测到 dsh 路径，请先自动扫描或手动填写".to_string());
+        }
+        ep_path
+    } else {
+        tauri::async_runtime::spawn_blocking(find_dsh)
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?
+    };
+
+    let dsh_home = if is_wsl { ep_home.unwrap_or_default() } else { default_dsh_home() };
+    let workspace = if is_wsl {
+        let w = endpoint.as_ref().and_then(|e| e.workspace.clone()).unwrap_or(workspace);
+        if w.is_empty() { "~".to_string() } else { w }
+    } else {
+        workspace
+    };
+
     let host = "127.0.0.1".to_string();
     let url = format!("http://{host}:{port}/");
 
@@ -141,37 +179,49 @@ pub async fn start(app: AppHandle, workspace: String, port: u16) -> Result<(), S
         inner.dsh_path = dsh_path.clone();
         inner.dsh_home = dsh_home.clone();
         inner.status = "starting".to_string();
+        inner.wsl_distro = if is_wsl { distro.clone() } else { None };
+        inner.wsl_port = if is_wsl { Some(port) } else { None };
     }
     append_log(&app, "info", &format!("启动 Harness: {dsh_path} web --host {host} --port {port}"));
     append_log(&app, "info", &format!("工作区: {workspace}"));
     set_status(&app, "starting", "正在启动…");
 
-    let _ = std::fs::create_dir_all(&dsh_home);
-
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-
-    let mut cmd = std::process::Command::new("cmd");
-    cmd.args([
-        "/C",
-        &dsh_path,
-        "web",
-        "--host",
-        &host,
-        "--port",
-        &port.to_string(),
-    ]);
-    cmd.current_dir(&workspace);
-    cmd.env("DSH_HOME", &dsh_home);
-    cmd.env("NO_COLOR", "1");
-    cmd.creation_flags(CREATE_NO_WINDOW);
-    cmd.stdout(std::process::Stdio::piped());
-    cmd.stderr(std::process::Stdio::piped());
-
-    let mut child = cmd.spawn().map_err(|e| e.to_string())?;
-    let pid = child.id();
-    let stdout = child.stdout.take();
-    let stderr = child.stderr.take();
+    let (child, pid, stdout, stderr) = if is_wsl {
+        let d = distro.clone().ok_or_else(|| "WSL 发行版名称为空".to_string())?;
+        let bind_host = "0.0.0.0";
+        let script = if workspace == "~" {
+            format!("'{}' web --host {} --port {}", dsh_path, bind_host, port)
+        } else {
+            format!("cd '{}' && '{}' web --host {} --port {}", workspace, dsh_path, bind_host, port)
+        };
+        let mut cmd = std::process::Command::new("wsl");
+        cmd.args(["-d", &d, "--", "bash", "-lc", &script]);
+        if !dsh_home.is_empty() { cmd.env("DSH_HOME", &dsh_home); }
+        cmd.env("NO_COLOR", "1");
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd.stdout(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::piped());
+        let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+        let pid = child.id();
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+        (child, pid, stdout, stderr)
+    } else {
+        let _ = std::fs::create_dir_all(&dsh_home);
+        let mut cmd = std::process::Command::new("cmd");
+        cmd.args(["/C", &dsh_path, "web", "--host", &host, "--port", &port.to_string()]);
+        cmd.current_dir(&workspace);
+        cmd.env("DSH_HOME", &dsh_home);
+        cmd.env("NO_COLOR", "1");
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd.stdout(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::piped());
+        let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+        let pid = child.id();
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+        (child, pid, stdout, stderr)
+    };
 
     {
         let state = app.state::<HarnessState>();
@@ -180,12 +230,8 @@ pub async fn start(app: AppHandle, workspace: String, port: u16) -> Result<(), S
         inner.child = Some(child);
     }
 
-    if let Some(out) = stdout {
-        spawn_reader(app.clone(), out, "info");
-    }
-    if let Some(err) = stderr {
-        spawn_reader(app.clone(), err, "err");
-    }
+    if let Some(out) = stdout { spawn_reader(app.clone(), out, "info"); }
+    if let Some(err) = stderr { spawn_reader(app.clone(), err, "err"); }
 
     let app2 = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -208,7 +254,6 @@ pub async fn start(app: AppHandle, workspace: String, port: u16) -> Result<(), S
                 let _ = open_url(&u);
                 return;
             }
-
             let exited = {
                 let state = app2.state::<HarnessState>();
                 let mut inner = state.inner.lock().unwrap();
@@ -222,20 +267,17 @@ pub async fn start(app: AppHandle, workspace: String, port: u16) -> Result<(), S
                 set_status(&app2, "error", "异常 / 超时");
                 return;
             }
-
             if tokio::time::Instant::now() >= deadline {
                 append_log(&app2, "err", "等待超时：Harness 未在 120 秒内就绪");
                 set_status(&app2, "error", "异常 / 超时");
                 return;
             }
-
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
     });
 
     Ok(())
 }
-
 fn spawn_reader<R: std::io::Read + Send + 'static>(
     app: AppHandle,
     reader: R,
@@ -256,13 +298,29 @@ fn spawn_reader<R: std::io::Read + Send + 'static>(
 }
 
 pub async fn stop(app: AppHandle) -> Result<(), String> {
-    let pid = {
+    let (pid, distro, port) = {
         let state = app.state::<HarnessState>();
         let mut inner = state.inner.lock().unwrap();
         inner.child = None;
-        inner.pid.take()
+        let pid = inner.pid.take();
+        let distro = inner.wsl_distro.take();
+        let port = inner.wsl_port.take();
+        (pid, distro, port)
     };
     if let Some(pid) = pid {
+        if let Some(distro) = distro {
+            let port = port.unwrap_or(0);
+            let _ = std::process::Command::new("wsl")
+                .args([
+                    "-d",
+                    &distro,
+                    "--",
+                    "bash",
+                    "-lc",
+                    &format!("pkill -f 'dsh web --port {}' || true", port),
+                ])
+                .output();
+        }
         let _ = std::process::Command::new("taskkill")
             .args(["/PID", &pid.to_string(), "/T", "/F"])
             .output();
