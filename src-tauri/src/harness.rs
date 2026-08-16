@@ -16,7 +16,7 @@ pub struct EndpointSpec {
     pub dsh_home: Option<String>,
 }
 
-fn find_dsh() -> Result<String> {
+pub fn find_dsh() -> Result<String> {
     if let Ok(appdata) = std::env::var("APPDATA") {
         let cand = PathBuf::from(&appdata).join("npm").join("dsh.cmd");
         if cand.exists() {

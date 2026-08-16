@@ -118,6 +118,11 @@ fn open_browser(state: tauri::State<'_, HarnessState>) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn open_external(url: String) -> Result<(), String> {
+    harness::open_url(&url)
+}
+
+#[tauri::command]
 fn open_logs_dir(state: tauri::State<'_, HarnessState>) -> Result<(), String> {
     let dir = {
         let inner = state.inner.lock().unwrap();
@@ -238,6 +243,42 @@ fn scan_wsl() -> Vec<capabilities::WslInfo> {
 #[tauri::command]
 fn ping_endpoint(endpoint: serde_json::Value) -> String {
     capabilities::ping(&endpoint)
+}
+
+#[tauri::command]
+fn import_plugin(path: String) -> Result<String, String> {
+    capabilities::import_plugin(&path)
+}
+
+#[tauri::command]
+async fn install_market_plugin(target: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || capabilities::install_market_plugin(&target))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn uninstall_market_plugin(target: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || capabilities::uninstall_market_plugin(&target))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn remove_plugin(id: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || capabilities::remove_plugin(&id))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn set_plugin_enabled(id: String, enabled: bool) -> Result<(), String> {
+    capabilities::set_plugin_enabled(&id, enabled)
+}
+
+#[tauri::command]
+fn open_plugin_folder(id: String) -> Result<(), String> {
+    capabilities::open_plugin_folder(&id)
 }
 
 #[tauri::command]
@@ -502,6 +543,7 @@ pub fn run() {
             start_harness,
             stop_harness,
             open_browser,
+            open_external,
             open_logs_dir,
             hide_to_tray,
             set_workspace,
@@ -518,6 +560,12 @@ pub fn run() {
             list_mcp,
             scan_wsl,
             ping_endpoint,
+            import_plugin,
+            install_market_plugin,
+            uninstall_market_plugin,
+            remove_plugin,
+            set_plugin_enabled,
+            open_plugin_folder,
             get_dsh_settings,
             set_dsh_settings,
             get_launcher_prefs,

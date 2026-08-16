@@ -248,13 +248,20 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
 .market-modal{position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:200;display:none;
   align-items:center;justify-content:center}
 .market-modal.show{display:flex}
-.market-box{width:520px;max-height:70vh;background:#fff;border-radius:8px;display:flex;flex-direction:column;overflow:hidden}
+.market-box{width:760px;max-width:92vw;max-height:78vh;background:#fff;border-radius:8px;display:flex;flex-direction:column;overflow:hidden}
 .market-box .mb-head{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border-color)}
 .market-box .mb-head h3{font-size:15px}
-.market-box .mb-body{flex:1;overflow-y:auto;padding:12px 16px}
-.market-card{border:1px solid var(--border-color);border-radius:4px;padding:10px;margin-bottom:8px}
-.market-card .mc-head{display:flex;justify-content:space-between;align-items:center}
-.market-card .mc-name{font-size:13px;font-weight:600}
+.market-box .mb-toolbar{display:flex;flex-wrap:wrap;gap:8px;padding:10px 16px;border-bottom:1px solid var(--border-color)}
+.market-box .mb-toolbar input{flex:1;padding:6px 8px;border:1px solid var(--border-color);border-radius:3px;font-size:12px}
+.market-box .mb-toolbar select{padding:6px 8px;border:1px solid var(--border-color);border-radius:3px;font-size:12px;max-width:180px}
+.market-box .mb-body{flex:1;overflow-y:auto;padding:12px 16px;display:grid;grid-template-columns:1fr 1fr;gap:10px;align-content:start}
+.market-empty{grid-column:1/-1;text-align:center;padding:24px 12px;color:var(--text-secondary);font-size:12px}
+.market-card{border:1px solid var(--border-color);border-radius:6px;padding:10px;background:#fff}
+.market-card .mc-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.market-card .mc-title{display:flex;align-items:center;gap:8px;min-width:0}
+.market-card .mc-avatar{width:34px;height:34px;border-radius:50%;background:#eaf3ff;color:#2b6cb0;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:14px;flex:none;overflow:hidden}
+.market-card .mc-avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.market-card .mc-name{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .market-card .mc-desc{font-size:12px;color:var(--text-secondary);margin:4px 0}
 .market-card .mc-meta{font-size:11px;color:var(--text-secondary)}
 
@@ -513,10 +520,31 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
 <div class="market-modal" id="marketModal">
   <div class="market-box">
     <div class="mb-head">
-      <h3>DSH 插件市场（当前端）</h3>
+      <h3>DSH 插件市场</h3>
       <button class="settings-close" id="marketClose">&times;</button>
     </div>
-    <div class="mb-body" id="marketBody"></div>
+    <div class="mb-toolbar">
+      <input type="text" id="marketSearch" placeholder="搜索插件名称 / 作者 / 说明...">
+      <select id="marketCategory"><option value="">全部分类</option></select>
+      <select id="marketStatus">
+        <option value="">全部状态</option>
+        <option value="installed">已安装</option>
+        <option value="not">未安装</option>
+      </select>
+      <select id="marketSource">
+        <option value="">全部来源</option>
+        <option value="npm">npm</option>
+        <option value="github">GitHub</option>
+      </select>
+      <select id="marketSort">
+        <option value="">默认排序</option>
+        <option value="stars">星标最多</option>
+        <option value="name">名称排序</option>
+        <option value="added">最近添加</option>
+      </select>
+      <button class="btn-small" id="marketRefresh">刷新</button>
+    </div>
+    <div class="mb-body" id="marketBody"><div class="market-empty">加载市场数据中...</div></div>
   </div>
 </div>
 
@@ -642,6 +670,7 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
         <div class="cap-toolbar">
           <select id="skillFilter"><option value="">全部插件</option></select>
           <label><input type="checkbox" id="skillOnlyEnabled"> 只看已启用</label>
+          <button class="btn-small" id="btnRefreshSkill">刷新</button>
         </div>
         <div id="skillList"></div>
       </div>
@@ -666,11 +695,10 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
 const HAS_TAURI = !!(window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke);
 // 尚未在 DSH 官方能力中确认/未实现后端的功能：仅原型预览，Tauri 环境回退为空数据
 const PROTO_CMDS = new Set([
-  "toggle_plugin","reload_plugin","uninstall_plugin",
+  "reload_plugin",
   "get_plugin_config","set_plugin_config","import_local_plugin",
   "toggle_skill","get_skill_config","set_skill_config",
   "toggle_mcp","test_mcp","add_mcp","remove_mcp",
-  "get_market","install_market_plugin",
   "get_usage_stats","get_usage_limits","set_usage_limits",
   "export_config","import_config","reset_config",
   "list_endpoints","add_endpoint","update_endpoint","remove_endpoint","set_active_endpoint"
@@ -737,9 +765,6 @@ function setActiveEndpoint(id){
   $("urlInput").value=`http://127.0.0.1:${ep.port}/`;
   $("openUrlLink").textContent=`http://127.0.0.1:${ep.port}/`;
   appendLog(`[多端] 已切换到「${ep.name}」（${ep.type}，端口 ${ep.port}）`,"log-ready");
-  if(document.querySelector('.tab-content[data-tab="capability"]').classList.contains("active")){
-    renderPlugins();renderSkills();renderMcp();
-  }
   if(document.querySelector('.tab-content[data-tab="session"]').classList.contains("active")){
     loadSessions();
   }
@@ -852,6 +877,7 @@ let logLines=0;
 let currentSessionId=null;
 
 function $(id){return document.getElementById(id)}
+function escapeHtml(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function appendLog(text,cls){
   const box=$("logContent");const s=document.createElement("span");
   if(cls)s.className=cls;s.textContent=text+"\n";
@@ -883,7 +909,7 @@ document.querySelectorAll(".tab-btn").forEach(btn=>{
     document.querySelectorAll(".tab-content").forEach(c=>c.classList.remove("active"));
     document.querySelector(`.tab-content[data-tab="${btn.dataset.tab}"]`).classList.add("active");
     if(btn.dataset.tab==="session")loadSessions();
-    if(btn.dataset.tab==="capability"){renderPlugins();renderSkills();renderMcp()}
+    if(btn.dataset.tab==="capability"&&!capLoaded){loadCapabilityData()}
   };
 });
 
@@ -1161,108 +1187,240 @@ async function loadSessionDetail(id){
 /* ============================================================
    插件管理
    ============================================================ */
-let pluginData=[];
-async function renderPlugins(){
-  pluginData=await invoke("list_plugins",{endpoint_id:currentEndpoint().id});
+let pluginData=[],skillData=[],mcpData=[];
+let capLoaded=false;
+async function fetchPlugins(){try{pluginData=await invoke("list_plugins",{endpoint_id:currentEndpoint().id})}catch(e){pluginData=[]}}
+async function fetchSkills(){try{skillData=await invoke("list_skills",{endpoint_id:currentEndpoint().id})}catch(e){skillData=[]}}
+async function fetchMcp(){try{mcpData=await invoke("list_mcp",{endpoint_id:currentEndpoint().id})}catch(e){mcpData=[]}}
+async function loadCapabilityData(){
+  await Promise.all([fetchPlugins(),fetchSkills(),fetchMcp()]);
+  renderPlugins();renderSkills();renderMcp();
+  capLoaded=true;
+}
+function renderPlugins(){
   const kw=($("pluginSearch")?.value||"").toLowerCase();
   const box=$("pluginList");box.innerHTML="";
-  if(!pluginData||!pluginData.length){box.innerHTML='<div class="session-empty">暂无插件</div>';return}
-  pluginData.filter(p=>!kw||p.name.toLowerCase().includes(kw)||p.id.toLowerCase().includes(kw)).forEach(p=>{
+  if(!pluginData||!pluginData.length){box.innerHTML='<div class="session-empty">暂无插件（可在「插件市场」安装，或「导入本地」目录）</div>';return}
+  const srcLabel={bundle:"内置核心",npm:"npm 插件",local:"本地导入",harness:"本地插件",preset:"Agent 预设"};
+  pluginData.filter(p=>!kw||(p.name||"").toLowerCase().includes(kw)||(p.id||"").toLowerCase().includes(kw)).forEach(p=>{
     const card=document.createElement("div");card.className="cap-card";
+    const tagCls=p.builtin?"tag-builtin":"tag-third";
+    const canToggle=p.source==="local";
+    const canUninstall=p.source==="local"||p.source==="npm";
     card.innerHTML=`
       <div class="cc-head">
-        <div><span class="cc-name">${p.name}</span><span class="cc-ver">v${p.version}</span>
-          <span class="cc-tag ${p.builtin?"tag-builtin":"tag-third"}">${p.builtin?"内置核心":"第三方"}</span></div>
+        <div><span class="cc-name">${escapeHtml(p.name)}</span><span class="cc-ver">${p.version?"v"+escapeHtml(p.version):""}</span>
+          <span class="cc-tag ${tagCls}">${srcLabel[p.source]||"插件"}</span></div>
         <span class="status-badge ${p.enabled?"badge-on":"badge-off"}">${p.enabled?"已启用":"已禁用"}</span>
       </div>
-      <div class="cc-desc">${p.desc}</div>
-      <div class="cc-meta">ID: ${p.id} · 作者: ${p.author}${p.skills&&p.skills.length?` · 技能: ${p.skills.join(", ")}`:""}</div>
+      <div class="cc-desc">${escapeHtml(p.desc)}</div>
+      <div class="cc-meta">ID: ${escapeHtml(p.id)}${p.author?` · 作者: ${escapeHtml(p.author)}`:""}${p.skills&&p.skills.length?` · 技能: ${p.skills.map(escapeHtml).join(", ")}`:""}</div>
       <div class="cc-actions">
-        ${p.builtin?"":`<button class="btn-small" data-act="toggle" data-id="${p.id}">${p.enabled?"禁用":"启用"}</button>`}
-        <button class="btn-small" data-act="reload" data-id="${p.id}">重载</button>
-        <button class="btn-small" data-act="config" data-id="${p.id}">配置</button>
-        ${p.builtin?"":`<button class="btn-danger" data-act="uninstall" data-id="${p.id}">卸载</button>`}
+        ${canToggle?`<button class="btn-small" data-act="toggle" data-id="${escapeHtml(p.id)}">${p.enabled?"禁用":"启用"}</button>`:""}
+        ${p.dir?`<button class="btn-small" data-act="open" data-id="${escapeHtml(p.id)}">打开目录</button>`:""}
+        ${canUninstall?`<button class="btn-danger" data-act="uninstall" data-id="${escapeHtml(p.id)}">卸载</button>`:""}
       </div>`;
     box.appendChild(card);
   });
   box.querySelectorAll("button[data-act]").forEach(btn=>{
     btn.onclick=async e=>{
-      e.stopPropagation();const id=btn.dataset.id,act=btn.dataset.act;
-      if(act==="toggle"){await invoke("toggle_plugin",{pid:id,enable:!pluginData.find(p=>p.id===id).enabled,endpoint_id:currentEndpoint().id});renderPlugins();appendLog(`[插件] ${id} 状态已切换`,"log-ready")}
-      else if(act==="reload"){await invoke("reload_plugin",{pid:id,endpoint_id:currentEndpoint().id});appendLog(`[插件] ${id} 已重载`,"log-ready")}
-      else if(act==="config"){const p=pluginData.find(x=>x.id===id);showConfirm("插件配置",`插件「${p.name}」配置面板（原型）。\n实际实现将根据插件 config.schema.json 自动渲染表单。\n\n当前配置项：\n- 启用状态：${p.enabled?"开启":"关闭"}\n- 版本：${p.version}`,()=>{})}
-      else if(act==="uninstall"){showConfirm("卸载插件",`确定要卸载插件「${id}」吗？此操作不可撤销。`,async()=>{await invoke("uninstall_plugin",{pid:id,endpoint_id:currentEndpoint().id});renderPlugins();appendLog(`[插件] ${id} 已卸载`,"log-error")})}
+      e.stopPropagation();const id=btn.dataset.id,act=btn.dataset.act,p=pluginData.find(x=>x.id===id);
+      if(act==="toggle"){
+        const next=!p.enabled;
+        try{await invoke("set_plugin_enabled",{id,enabled:next});appendLog(`[插件] ${id} ${next?"已启用":"已禁用"}，重启 DSH 后生效`,"log-ready");await fetchPlugins();renderPlugins()}
+        catch(err){appendLog(`[插件] 操作失败：${err}`,"log-error")}
+      }
+      else if(act==="open"){
+        try{await invoke("open_plugin_folder",{id})}catch(err){appendLog(`打开目录失败：${err}`,"log-error")}
+      }
+      else if(act==="uninstall"){
+        showConfirm("卸载插件",`确定要卸载插件「${p.name}」吗？${p.source==="local"?"将删除本地目录并移除注册，重启 DSH 后生效。":"将调用 pnpm 卸载依赖。"}`,async()=>{
+          try{const r=await invoke("remove_plugin",{id});appendLog(`[插件] ${r}`,"log-ready");await fetchPlugins();renderPlugins()}
+          catch(err){appendLog(`[插件] 卸载失败：${err}`,"log-error")}
+        });
+      }
     };
   });
 }
-$("btnRefreshPlugin")?.addEventListener("click",renderPlugins);
+$("btnRefreshPlugin")?.addEventListener("click",async()=>{await fetchPlugins();renderPlugins()});
 $("pluginSearch")?.addEventListener("input",renderPlugins);
-$("btnImportPlugin")?.addEventListener("click",()=>showConfirm("导入本地插件","选择本地插件文件夹进行安装（原型提示，实际调用文件选择器）。",()=>{}));
+$("btnImportPlugin")?.addEventListener("click",async()=>{
+  try{
+    const p=await invoke("pick_workspace");
+    if(!p)return;
+    const name=await invoke("import_plugin",{path:p});
+    appendLog(`[插件] 已导入并注册：${name}，重启 DSH 后生效`,"log-ready");
+    await fetchPlugins();renderPlugins();
+  }catch(e){appendLog("导入插件失败："+e,"log-error")}
+});
 
 /* 插件市场 */
-$("btnOpenMarket")?.addEventListener("click",async()=>{
-  const list=await invoke("get_market",{endpoint_id:currentEndpoint().id});
-  const body=$("marketBody");body.innerHTML="";
+const MARKET_URL="https://awesome-dsh-plugin.com/plugins.json";
+let marketData=[];
+let marketCategories={};
+let marketLoading=false;
+function marketTarget(m){
+  if(m.install){const parts=m.install.trim().split(/\s+/);if(parts.length)return parts[parts.length-1]}
+  return m.npm||m.name;
+}
+function marketInstalledSet(){
+  const s=new Set();
+  (pluginData||[]).forEach(p=>{s.add((p.id||"").toLowerCase());s.add((p.name||"").toLowerCase())});
+  return s;
+}
+function marketDesc(m){
+  if(!m.description)return "";
+  return m.description.zh||m.description.en||"";
+}
+function marketCategoryZh(m){
+  const c=marketCategories[m.category];
+  return c?(c.zh||c.en||m.category):(m.category||"");
+}
+function renderMarket(){
+  const kw=($("marketSearch")?.value||"").toLowerCase();
+  const cat=$("marketCategory")?.value||"";
+  const status=$("marketStatus")?.value||"";
+  const source=$("marketSource")?.value||"";
+  const sort=$("marketSort")?.value||"";
+  const body=$("marketBody");
+  const installed=marketInstalledSet();
+  let list=(marketData||[]).filter(m=>{
+    if(cat&&m.category!==cat)return false;
+    const isInst=m.installed||installed.has((m.name||"").toLowerCase())||(m.npm&&installed.has(m.npm.toLowerCase()));
+    if(status==="installed"&&!isInst)return false;
+    if(status==="not"&&isInst)return false;
+    if(source==="npm"&&!m.npm)return false;
+    if(source==="github"&&m.npm)return false;
+    if(kw){
+      const hay=(m.name+" "+(m.owner||"")+" "+marketDesc(m)+" "+(m.npm||"")).toLowerCase();
+      if(!hay.includes(kw))return false;
+    }
+    return true;
+  });
+  if(sort==="stars")list=list.slice().sort((a,b)=>(b.stars||0)-(a.stars||0));
+  else if(sort==="name")list=list.slice().sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+  else if(sort==="added")list=list.slice().sort((a,b)=>(b.added||"").localeCompare(a.added||""));
+  if(!list.length){body.innerHTML='<div class="market-empty">没有符合条件的插件</div>';return}
+  body.innerHTML="";
   list.forEach(m=>{
+    const isInst=m.installed||installed.has((m.name||"").toLowerCase())||(m.npm&&installed.has(m.npm.toLowerCase()));
+    const desc=marketDesc(m);
+    const catZh=marketCategoryZh(m);
+    const initial=(m.owner||"?").trim().charAt(0).toUpperCase();
+    const avatar='https://github.com/'+encodeURIComponent(m.owner||'')+'.png';
     const card=document.createElement("div");card.className="market-card";
-    card.innerHTML=`<div class="mc-head"><span class="mc-name">${m.name} <span style="font-size:11px;color:var(--text-secondary)">v${m.version}</span></span>
-      <button class="${m.installed?"btn-normal":"btn-primary"}" style="padding:4px 10px;font-size:12px" data-id="${m.id}" ${m.installed?"disabled":""}>${m.installed?"已安装":"安装"}</button></div>
-      <div class="mc-desc">${m.desc}</div><div class="mc-meta">作者：${m.author}</div>`;
+    card.innerHTML=`
+      <div class="mc-head">
+        <div class="mc-title">
+          <div class="mc-avatar"><img src="${escapeHtml(avatar)}" loading="lazy" alt="" onerror="this.parentNode.textContent='${escapeHtml(initial)}'"></div>
+          <span class="mc-name" title="${escapeHtml(m.name)}">${escapeHtml(m.name)}</span>
+        </div>
+        <div style="display:flex;gap:6px;flex:none">
+          ${m.url?`<button class="btn-small" style="padding:4px 8px;font-size:11px" data-act="open" data-url="${escapeHtml(m.url)}">主页</button>`:""}
+          <button class="${isInst?"btn-normal":"btn-primary"}" style="padding:4px 10px;font-size:12px" data-act="install" data-name="${escapeHtml(m.name)}" ${isInst?"disabled":""}>${isInst?"已安装":"安装"}</button>
+        </div>
+      </div>
+      <div class="mc-desc">${escapeHtml(desc)}</div>
+      <div class="mc-meta">作者：${escapeHtml(m.owner)}${catZh?` · ${escapeHtml(catZh)}`:""}${m.stars?` · ★ ${m.stars}`:""}${m.npm?` · npm: ${escapeHtml(m.npm)}`:` · GitHub`}</div>`;
     body.appendChild(card);
   });
-  body.querySelectorAll("button[data-id]").forEach(b=>{
-    b.onclick=async()=>{await invoke("install_market_plugin",{pid:b.dataset.id,endpoint_id:currentEndpoint().id});b.textContent="已安装";b.disabled=true;b.className="btn-normal";appendLog(`[市场] 已安装插件 ${b.dataset.id}`,"log-ready")};
+  body.querySelectorAll("button[data-act]").forEach(b=>{
+    b.onclick=async e=>{
+      e.stopPropagation();
+      if(b.dataset.act==="open"){
+        const url=b.dataset.url;if(url){try{await invoke("open_external",{url})}catch(err){appendLog("打开链接失败："+err,"log-error")}}
+        return;
+      }
+      const name=b.dataset.name,m=marketData.find(x=>x.name===name);
+      if(!m)return;
+      const target=marketTarget(m);
+      b.disabled=true;b.textContent="安装中...";
+      appendLog(`[市场] 正在安装 ${name}（${target}）...`,"log-start");
+      try{
+        const r=await invoke("install_market_plugin",{target});
+        appendLog(`[市场] 安装完成：${r}`,"log-ready");
+        await fetchPlugins();renderPlugins();
+        renderMarket();
+      }catch(err){appendLog(`[市场] 安装失败：${err}`,"log-error");b.disabled=false;b.textContent="安装"}
+    };
   });
+}
+async function loadMarket(force){
+  if(marketLoading)return;
+  marketLoading=true;
+  const body=$("marketBody");body.innerHTML='<div class="market-empty">正在从 awesome-dsh-plugin.com 拉取市场数据...</div>';
+  try{
+    const resp=await fetch(MARKET_URL,{cache:force?"reload":"default"});
+    if(!resp.ok)throw new Error("HTTP "+resp.status);
+    const data=await resp.json();
+    marketData=data.plugins||[];
+    marketCategories=data.categories||{};
+    const sel=$("marketCategory");
+    const cur=sel.value;
+    sel.innerHTML='<option value="">全部分类（'+marketData.length+'）</option>';
+    Object.keys(marketCategories).forEach(k=>{
+      const o=document.createElement("option");o.value=k;o.textContent=marketCategories[k].zh||marketCategories[k].en||k;sel.appendChild(o);
+    });
+    sel.value=cur;
+    appendLog(`[市场] 已获取 ${marketData.length} 个社区插件`,"log-ready");
+    renderMarket();
+  }catch(err){
+    body.innerHTML='<div class="market-empty">市场数据加载失败：'+escapeHtml(String(err))+'</div>';
+    appendLog(`[市场] 加载失败：${err}`,"log-error");
+  }finally{marketLoading=false}
+}
+$("btnOpenMarket")?.addEventListener("click",async()=>{
   $("marketModal").classList.add("show");
+  if(!marketData.length)await loadMarket(false);
+  else renderMarket();
 });
 $("marketClose").onclick=()=>$("marketModal").classList.remove("show");
+$("marketSearch")?.addEventListener("input",renderMarket);
+$("marketCategory")?.addEventListener("change",renderMarket);
+$("marketStatus")?.addEventListener("change",renderMarket);
+$("marketSource")?.addEventListener("change",renderMarket);
+$("marketSort")?.addEventListener("change",renderMarket);
+$("marketRefresh")?.addEventListener("click",()=>loadMarket(true));
 
 /* ============================================================
    Skill 管理
    ============================================================ */
-let skillData=[];
-async function renderSkills(){
-  skillData=await invoke("list_skills",{endpoint_id:currentEndpoint().id});
+function renderSkills(){
   const filter=$("skillFilter").value,onlyOn=$("skillOnlyEnabled").checked;
   const box=$("skillList");
   const sel=$("skillFilter");
-  if(sel.options.length<=1){[...new Set(skillData.map(s=>s.plugin))].forEach(p=>{const o=document.createElement("option");o.value=p;o.textContent=p;sel.appendChild(o)})}
+  if(sel.options.length<=1){[...new Set(skillData.map(s=>s.plugin))].filter(Boolean).forEach(p=>{const o=document.createElement("option");o.value=p;o.textContent=p;sel.appendChild(o)})}
   box.innerHTML="";
-  if(!skillData||!skillData.length){box.innerHTML='<div class="session-empty">暂无技能</div>';return}
+  if(!skillData||!skillData.length){box.innerHTML='<div class="session-empty">未扫描到技能（Skill 是目录下带 frontmatter 的 SKILL.md，属于 DSH 原生技能体系）</div>';return}
   skillData.filter(s=>(!filter||s.plugin===filter)&&(!onlyOn||s.enabled)).forEach(s=>{
     const card=document.createElement("div");card.className="cap-card";
     card.innerHTML=`
       <div class="cc-head">
-        <div><span class="cc-name">${s.name}</span><span class="cc-ver">${s.plugin}</span></div>
+        <div><span class="cc-name">${escapeHtml(s.name)}</span><span class="cc-ver">${escapeHtml(s.plugin)}</span></div>
         <span class="status-badge ${s.enabled?"badge-on":"badge-off"}">${s.enabled?"已启用":"已禁用"}</span>
       </div>
-      <div class="cc-desc">${s.desc}</div>
-      <div class="cc-meta">ID: ${s.id} · 累计调用: ${s.calls} 次 · 入参: ${s.params} · 返回: ${s.returns}</div>
+      <div class="cc-desc">${escapeHtml(s.desc)}</div>
+      <div class="cc-meta">ID: ${escapeHtml(s.id)}</div>
       <div class="cc-actions">
-        <button class="btn-small" data-act="toggle" data-id="${s.id}">${s.enabled?"禁用":"启用"}</button>
-        <button class="btn-small" data-act="detail" data-id="${s.id}">详情</button>
-        <button class="btn-small" data-act="reset" data-id="${s.id}">重置统计</button>
+        <button class="btn-small" data-act="detail" data-id="${escapeHtml(s.id)}">详情</button>
       </div>`;
     box.appendChild(card);
   });
   box.querySelectorAll("button[data-act]").forEach(btn=>{
     btn.onclick=e=>{
       e.stopPropagation();const id=btn.dataset.id,act=btn.dataset.act,s=skillData.find(x=>x.id===id);
-      if(act==="toggle"){s.enabled=!s.enabled;appendLog(`[技能] ${id} 状态已切换`,"log-ready");renderSkills()}
-      else if(act==="detail"){showConfirm("技能详情",`名称：${s.name}\n所属插件：${s.plugin}\n说明：${s.desc}\n入参：${s.params}\n返回：${s.returns}\n累计调用：${s.calls} 次`,()=>{})}
-      else if(act==="reset"){showConfirm("重置统计",`确定要重置技能「${s.name}」的调用统计吗？`,()=>{s.calls=0;renderSkills()})}
+      if(act==="detail"){showConfirm("技能详情",`名称：${s.name}\n所属插件：${s.plugin}\n说明：${s.desc||"（无说明）"}`,()=>{})}
     };
   });
 }
 $("skillFilter")?.addEventListener("change",renderSkills);
 $("skillOnlyEnabled")?.addEventListener("change",renderSkills);
+$("btnRefreshSkill")?.addEventListener("click",async()=>{await fetchSkills();renderSkills()});
 
 /* ============================================================
    MCP 管理
    ============================================================ */
-let mcpData=[];
-async function renderMcp(){
-  mcpData=await invoke("list_mcp",{endpoint_id:currentEndpoint().id});
+function renderMcp(){
   const box=$("mcpList");box.innerHTML="";
   if(!mcpData||!mcpData.length){box.innerHTML='<div class="session-empty">暂无 MCP 服务</div>';return}
   mcpData.forEach(m=>{
@@ -1294,9 +1452,9 @@ async function renderMcp(){
     };
   });
 }
-$("btnAddMcp")?.addEventListener("click",()=>showConfirm("添加 MCP","填写 MCP 服务名称、协议、地址（原型提示，实际将弹出表单）。",()=>{}));
-$("btnRefreshMcp")?.addEventListener("click",renderMcp);
-$("btnTestAllMcp")?.addEventListener("click",()=>{appendLog("[MCP] 正在测试全部连接...","log-start");setTimeout(()=>appendLog("[MCP] 全部连接测试完成","log-ready"),600)});
+$("btnAddMcp")?.addEventListener("click",()=>showConfirm("添加 MCP","DSH 当前未暴露可编辑的原生 MCP 配置入口，此项暂待接入；MCP 能力通常由插件（plugin）暴露。",()=>{}));
+$("btnRefreshMcp")?.addEventListener("click",async()=>{await fetchMcp();renderMcp()});
+$("btnTestAllMcp")?.addEventListener("click",()=>appendLog("[MCP] 当前没有已接入的 MCP 服务，无法测试","log-stop"));
 
 /* ============================================================
    运行与用量
@@ -1310,7 +1468,7 @@ function refreshUsage(){
   $("barPlugin").style.width="0%";
 }
 $("btnRefreshUsage")?.addEventListener("click",refreshUsage);
-$("btnExportUsage")?.addEventListener("click",()=>appendLog("[用量] 用量记录已导出","log-ready"));
+$("btnExportUsage")?.addEventListener("click",()=>appendLog("[用量] 用量统计尚未接入，无可导出数据","log-stop"));
 
 async function loadDshSettings(){
   try{ $("dshSettingsText").value = await invoke("get_dsh_settings"); }
@@ -1365,7 +1523,7 @@ $("btnImportConfig")?.addEventListener("click",async()=>{
 });
 $("btnResetUI")?.addEventListener("click",()=>showConfirm("重置外观与偏好","确定要重置启动器外观与偏好设置吗？看板娘、窗口、启动行为将恢复默认。",()=>{kanbanCfg={...DEFAULT_KANBAN};saveKanban();applyKanban();appendLog("[维护] 外观与偏好已重置","log-stop")}));
 $("btnResetEndpoints")?.addEventListener("click",()=>showConfirm("重置多端列表","确定要重置多端列表吗？将恢复默认的本地 Windows 端，其他端从列表移除（不删除端上的数据）。",()=>{endpoints=JSON.parse(JSON.stringify(DEFAULT_ENDPOINTS));saveEndpoints();renderEndpointList();updateEndpointUI();appendLog("[维护] 多端列表已重置","log-stop")}));
-$("btnResetDsh")?.addEventListener("click",()=>showConfirm("重置当前端 DSH 配置",`确定要重置「${currentEndpoint().name}」的 DSH 插件/技能/MCP 配置吗？此操作需重启 DSH 生效。`,()=>appendLog("[维护] 当前端 DSH 配置已重置","log-stop")));
+$("btnResetDsh")?.addEventListener("click",()=>showConfirm("重置当前端 DSH 配置",`这里不会真的清空 DSH 配置。若要重置，请手动编辑 DSH_HOME 下的 settings.yaml 与 cordis.patch.yml，或在终端运行 dsh 相关命令。`,()=>{}));
 $("btnResetAll")?.addEventListener("click",()=>showConfirm("重置全部配置","确定要重置全部配置吗？此操作不可撤销，所有设置将恢复默认。",()=>{kanbanCfg={...DEFAULT_KANBAN};saveKanban();applyKanban();endpoints=JSON.parse(JSON.stringify(DEFAULT_ENDPOINTS));saveEndpoints();renderEndpointList();updateEndpointUI();appendLog("[维护] 全部配置已重置","log-error")}));
 
 /* ============================================================
@@ -1374,6 +1532,7 @@ $("btnResetAll")?.addEventListener("click",()=>showConfirm("重置全部配置",
 applyKanban();
 updateEndpointUI();
 loadLauncherPrefs();
+loadCapabilityData();
 updateStatus(false,false);
 appendLog("DSH Desktop 启动器已就绪","log-ready");
 appendLog(`当前端：${currentEndpoint().name}（${typeLabel(currentEndpoint().type)}）`,"log-stop");
