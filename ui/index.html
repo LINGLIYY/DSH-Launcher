@@ -670,9 +670,16 @@ const PROTO_CMDS = new Set([
   "list_endpoints","add_endpoint","update_endpoint","remove_endpoint","set_active_endpoint"
 ]);
 async function invoke(cmd, args){
-  if(HAS_TAURI && !PROTO_CMDS.has(cmd)) return window.__TAURI__.core.invoke(cmd, args);
+  if(HAS_TAURI){
+    if(PROTO_CMDS.has(cmd)) return Promise.reject(new Error("该操作待接入 DSH 官方能力"));
+    return window.__TAURI__.core.invoke(cmd, args);
+  }
   return MOCK[cmd] ? MOCK[cmd](args) : Promise.resolve(null);
 }
+window.addEventListener("unhandledrejection", e => {
+  const msg = (e.reason && e.reason.message) ? e.reason.message : String(e.reason);
+  try { appendLog("操作待接入：" + msg, "log-stop"); } catch(_) {}
+});
 
 /* ===== 演示数据已剔除：浏览器预览仅返回空数据，不展示伪造内容 ===== */
 const MOCK = {
