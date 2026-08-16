@@ -23,6 +23,7 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
   transition:opacity .2s,width .2s,left .2s,right .2s,bottom .2s}
 .kanban-overlay.lb{right:auto;left:24px}
 .kanban-overlay.hidden{display:none}
+.kanban-overlay.draggable{pointer-events:auto;cursor:move;user-select:none}
 
 /* ===== 主窗口 ===== */
 .window-container{max-width:960px;margin:0 auto;border:1px solid var(--border-color);
@@ -315,6 +316,11 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
             <option value="lb">左下角</option>
           </select>
           <div class="si-desc">选择看板娘在窗口中的停靠边角。</div>
+          <div style="display:flex;gap:6px;margin-top:6px">
+            <button class="btn-small" id="btnEditKanbanPos">编辑位置</button>
+            <button class="btn-small" id="btnLockKanbanPos">确定位置</button>
+          </div>
+          <div class="si-desc">点击“编辑位置”后可自由拖拽看板娘，拖到合适位置后点“确定位置”锁定。</div>
         </div>
         <div class="setting-item">
           <div class="si-label"><span>智能避让</span><div class="switch" id="swKanbanAvoid"></div></div>
@@ -964,14 +970,19 @@ document.addEventListener("mouseup",()=>{
    看板娘配置
    ============================================================ */
 const KANBAN_KEY="dsh_launcher_kanban";
-const DEFAULT_KANBAN={enabled:true,width:340,opacity:0.38,position:"rb",avoid:false,customSrc:""};
+const DEFAULT_KANBAN={enabled:true,width:340,opacity:0.38,position:"rb",avoid:false,customSrc:"",x:null,y:null};
 let kanbanCfg=loadKanban();
 function loadKanban(){try{return {...DEFAULT_KANBAN,...JSON.parse(localStorage.getItem(KANBAN_KEY)||"{}")}}catch(e){return {...DEFAULT_KANBAN}}}
 function saveKanban(){localStorage.setItem(KANBAN_KEY,JSON.stringify(kanbanCfg))}
 function applyKanban(){
   const img=$("kanbanImg");
   img.classList.toggle("hidden",!kanbanCfg.enabled);
-  img.classList.toggle("lb",kanbanCfg.position==="lb");
+  if(kanbanCfg.x!=null){
+    img.style.right="auto";img.style.bottom="auto";img.style.left=kanbanCfg.x+"px";img.style.top=kanbanCfg.y+"px";
+  }else{
+    img.style.left="";img.style.top="";img.style.right="";img.style.bottom="";
+    img.classList.toggle("lb",kanbanCfg.position==="lb");
+  }
   document.documentElement.style.setProperty("--kanban-width",kanbanCfg.width+"px");
   document.documentElement.style.setProperty("--kanban-opacity",kanbanCfg.opacity);
   document.documentElement.style.setProperty("--kanban-bottom",kanbanCfg.avoid?"64px":"24px");
@@ -987,7 +998,7 @@ $("kanbanSize").oninput=function(){kanbanCfg.width=+this.value;$("kanbanSizeVal"
 $("kanbanSize").onchange=saveKanban;
 $("kanbanOpacity").oninput=function(){kanbanCfg.opacity=+this.value/100;$("kanbanOpacityVal").textContent=kanbanCfg.opacity.toFixed(2);applyKanban()};
 $("kanbanOpacity").onchange=saveKanban;
-$("kanbanPosition").onchange=function(){kanbanCfg.position=this.value;saveKanban();applyKanban()};
+$("kanbanPosition").onchange=function(){kanbanCfg.position=this.value;kanbanCfg.x=null;kanbanCfg.y=null;saveKanban();applyKanban()};
 $("swKanbanAvoid").onclick=function(){kanbanCfg.avoid=!kanbanCfg.avoid;saveKanban();applyKanban()};
 $("btnKanbanReset").onclick=function(){kanbanCfg={...DEFAULT_KANBAN};saveKanban();applyKanban();appendLog("[启动器] 看板娘已恢复默认设置","log-stop")};
 $("btnKanbanPick").onclick=async function(){
@@ -996,10 +1007,75 @@ $("btnKanbanPick").onclick=async function(){
     input.onchange=e=>{const f=e.target.files[0];if(f){const r=new FileReader();r.onload=ev=>{kanbanCfg.customSrc=ev.target.result;saveKanban();applyKanban()};r.readAsDataURL(f)}};input.click()}
 };
 
-/* 开关通用绑定 */
-document.querySelectorAll(".switch").forEach(sw=>{
-  if(sw.id==="swKanban"||sw.id==="swKanbanAvoid")return;
-  sw.onclick=function(){this.classList.toggle("on")};
+/* 看板娘拖拽定位 + 锁定 */
+let kanbanEditing=false,kanbanDragging=false,kanbanDragOffset={x:0,y:0};
+$("btnEditKanbanPos").onclick=function(){
+  kanbanEditing=true;
+  $("kanbanImg").classList.add("draggable");
+  appendLog("[启动器] 看板娘可自由拖拽，拖到合适位置后点击“确定位置”锁定","log-stop");
+};
+$("btnLockKanbanPos").onclick=function(){
+  kanbanEditing=false;kanbanDragging=false;
+  $("kanbanImg").classList.remove("draggable");
+  saveKanban();
+  appendLog("[启动器] 看板娘位置已锁定","log-ready");
+};
+$("kanbanImg").addEventListener("pointerdown",e=>{
+  if(!kanbanEditing)return;
+  kanbanDragging=true;
+  const r=$("kanbanImg").getBoundingClientRect();
+  kanbanDragOffset={x:e.clientX-r.left,y:e.clientY-r.top};
+  e.preventDefault();
+});
+window.addEventListener("pointermove",e=>{
+  if(!kanbanDragging)return;
+  kanbanCfg.x=Math.max(0,Math.round(e.clientX-kanbanDragOffset.x));
+  kanbanCfg.y=Math.max(0,Math.round(e.clientY-kanbanDragOffset.y));
+  applyKanban();
+});
+window.addEventListener("pointerup",()=>{kanbanDragging=false});
+
+/* 通用偏好真实接线 */
+let launcherPrefs = null;
+function setSwitch(id,on){const el=$(id);if(el)el.classList.toggle("on",!!on)}
+function isSwitchOn(id){return !!($(id)&&$(id).classList.contains("on"))}
+async function loadLauncherPrefs(){
+  try{launcherPrefs=await invoke("get_launcher_prefs")}
+  catch(e){launcherPrefs={close_behavior:"tray",single_instance:true,remember_window:true,auto_start:false,auto_open_browser:false,port_policy:"takeover",save_log:true,log_retention_days:15}}
+  $("closeBehavior").value=launcherPrefs.close_behavior||"tray";
+  $("launchBehavior").value=launcherPrefs.auto_start?"auto":"manual";
+  setSwitch("swAutoBrowser",!!launcherPrefs.auto_open_browser);
+  setSwitch("swRememberWin",launcherPrefs.remember_window!==false);
+  setSwitch("swSaveLog",launcherPrefs.save_log!==false);
+  $("logRetention").value=String(launcherPrefs.log_retention_days||15);
+  $("portPolicy").value=launcherPrefs.port_policy||"takeover";
+  setSwitch("swSingleInstance",true);
+  $("swSingleInstance").classList.add("locked");
+  $("swSingleInstance").title="当前版本固定开启，避免多实例";
+}
+async function saveLauncherPrefs(){
+  if(!launcherPrefs)return;
+  launcherPrefs.auto_start=$("launchBehavior").value==="auto";
+  launcherPrefs.auto_open_browser=isSwitchOn("swAutoBrowser");
+  launcherPrefs.close_behavior=$("closeBehavior").value;
+  launcherPrefs.remember_window=isSwitchOn("swRememberWin");
+  launcherPrefs.save_log=isSwitchOn("swSaveLog");
+  launcherPrefs.log_retention_days=parseInt($("logRetention").value||"15");
+  launcherPrefs.port_policy=$("portPolicy").value;
+  launcherPrefs.single_instance=true;
+  try{await invoke("set_launcher_prefs",{prefsJson:launcherPrefs})}catch(e){appendLog("保存偏好失败："+e,"log-error")}
+}
+$("closeBehavior").addEventListener("change",saveLauncherPrefs);
+$("launchBehavior").addEventListener("change",saveLauncherPrefs);
+$("logRetention").addEventListener("change",saveLauncherPrefs);
+$("portPolicy").addEventListener("change",saveLauncherPrefs);
+$("swAutoBrowser").addEventListener("click",()=>{setSwitch("swAutoBrowser",!isSwitchOn("swAutoBrowser"));saveLauncherPrefs()});
+$("swRememberWin").addEventListener("click",()=>{setSwitch("swRememberWin",!isSwitchOn("swRememberWin"));saveLauncherPrefs()});
+$("swSaveLog").addEventListener("click",()=>{setSwitch("swSaveLog",!isSwitchOn("swSaveLog"));saveLauncherPrefs()});
+$("swAutoStart").addEventListener("click",async()=>{
+  const on=!isSwitchOn("swAutoStart");setSwitch("swAutoStart",on);
+  try{await invoke("set_autostart",{enabled:on});appendLog(on?"[启动器] 已开启开机自启动":"[启动器] 已关闭开机自启动","log-ready")}
+  catch(e){appendLog("设置开机自启动失败："+e,"log-error")}
 });
 
 /* ============================================================
@@ -1293,6 +1369,7 @@ $("btnResetAll")?.addEventListener("click",()=>showConfirm("重置全部配置",
    ============================================================ */
 applyKanban();
 updateEndpointUI();
+loadLauncherPrefs();
 updateStatus(false,false);
 appendLog("DSH Desktop 启动器已就绪","log-ready");
 appendLog(`当前端：${currentEndpoint().name}（${typeLabel(currentEndpoint().type)}）`,"log-stop");

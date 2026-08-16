@@ -88,14 +88,20 @@ fn append_log(app: &AppHandle, level: &str, text: &str) {
         if inner.logs.len() > 1200 {
             inner.logs.pop_front();
         }
-        if let Some(parent) = inner.log_path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-            if let Ok(mut f) = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&inner.log_path)
-            {
-                let _ = writeln!(f, "[{}] {}", level, text);
+        let save_log = app
+            .try_state::<crate::PrefsState>()
+            .map(|s| s.inner.lock().unwrap().save_log)
+            .unwrap_or(true);
+        if save_log {
+            if let Some(parent) = inner.log_path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&inner.log_path)
+                {
+                    let _ = writeln!(f, "[{}] {}", level, text);
+                }
             }
         }
     }
@@ -165,6 +171,15 @@ pub async fn start(
             .unwrap_or(false)
     };
     if already_ready {
+        let policy = app
+            .try_state::<crate::PrefsState>()
+            .map(|s| s.inner.lock().unwrap().port_policy.clone())
+            .unwrap_or_else(|| "takeover".to_string());
+        if policy == "prompt" {
+            set_status(&app, "error", "端口被占用");
+            append_log(&app, "err", &format!("{url} 已被占用，请更换端口或停止现有实例"));
+            return Err(format!("端口 {port} 已被占用"));
+        }
         append_log(&app, "info", &format!("检测到 {url} 已有 DSH 实例，直接接管"));
         set_status(&app, "ready", "运行中");
         return Ok(());
@@ -251,7 +266,13 @@ pub async fn start(
             if ready {
                 append_log(&app2, "info", &format!("Harness 就绪: {u}"));
                 set_status(&app2, "ready", "运行中");
-                let _ = open_url(&u);
+                let auto_open = app2
+                    .try_state::<crate::PrefsState>()
+                    .map(|s| s.inner.lock().unwrap().auto_open_browser)
+                    .unwrap_or(false);
+                if auto_open {
+                    let _ = open_url(&u);
+                }
                 return;
             }
             let exited = {

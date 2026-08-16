@@ -1,6 +1,7 @@
 mod harness;
 mod sessions;
 mod capabilities;
+mod prefs;
 
 use serde::Serialize;
 use std::collections::VecDeque;
@@ -50,6 +51,10 @@ impl HarnessInner {
 
 pub struct HarnessState {
     pub inner: Mutex<HarnessInner>,
+}
+
+pub struct PrefsState {
+    pub inner: Mutex<prefs::LauncherPrefs>,
 }
 
 fn default_dsh_home() -> String {
@@ -248,6 +253,61 @@ fn set_dsh_settings(text: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_launcher_prefs(state: tauri::State<'_, PrefsState>) -> prefs::LauncherPrefs {
+    state.inner.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn set_launcher_prefs(
+    state: tauri::State<'_, PrefsState>,
+    prefs_json: prefs::LauncherPrefs,
+) -> Result<(), String> {
+    *state.inner.lock().unwrap() = prefs_json.clone();
+    prefs::save(&prefs_json)
+}
+
+#[tauri::command]
+fn set_autostart(enabled: bool) -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe = exe.to_string_lossy().into_owned();
+    let status = if enabled {
+        std::process::Command::new("reg")
+            .args([
+                "add",
+                "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                "/v",
+                "DSH Desktop",
+                "/t",
+                "REG_SZ",
+                "/d",
+                &exe,
+                "/f",
+            ])
+            .status()
+    } else {
+        std::process::Command::new("reg")
+            .args([
+                "delete",
+                "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                "/v",
+                "DSH Desktop",
+                "/f",
+            ])
+            .status()
+    };
+    status.map(|_| ()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn clear_launcher_cache(state: tauri::State<'_, PrefsState>) -> Result<(), String> {
+    let def = prefs::LauncherPrefs::default();
+    *state.inner.lock().unwrap() = def.clone();
+    prefs::save(&def)?;
+    let _ = std::fs::remove_file(prefs::log_dir().join("launcher.log"));
+    Ok(())
+}
+
+#[tauri::command]
 fn get_session(id: String) -> Result<Vec<sessions::Block>, String> {
     sessions::render_by_id(&id)
 }
@@ -318,12 +378,22 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
-            if let tauri::tray::TrayIconEvent::DoubleClick { .. } = event {
+            use tauri::tray::{MouseButton, MouseButtonState};
+            let show_window = |tray: &tauri::tray::TrayIcon| {
                 let app = tray.app_handle();
                 if let Some(w) = app.get_webview_window("main") {
                     let _ = w.show();
                     let _ = w.set_focus();
                 }
+            };
+            match event {
+                tauri::tray::TrayIconEvent::DoubleClick { .. } => show_window(tray),
+                tauri::tray::TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } => show_window(tray),
+                _ => {}
             }
         })
         .build(app)?;
@@ -331,6 +401,8 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 }
 
 pub fn run() {
+    let loaded_prefs = prefs::load();
+    let startup_prefs = loaded_prefs.clone();
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(w) = app.get_webview_window("main") {
@@ -342,23 +414,80 @@ pub fn run() {
         .manage(HarnessState {
             inner: Mutex::new(HarnessInner::new()),
         })
-        .setup(|app| {
+        .manage(PrefsState {
+            inner: Mutex::new(loaded_prefs),
+        })
+        .setup(move |app| {
             setup_tray(app.handle())?;
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                let (ws, port) = {
-                    let state = handle.state::<HarnessState>();
-                    let inner = state.inner.lock().unwrap();
-                    (inner.workspace.clone(), inner.port)
-                };
-                let _ = harness::start(handle, ws, port, None).await;
-            });
+
+            if let Some(w) = app.get_webview_window("main") {
+                if startup_prefs.remember_window {
+                    let wp = &startup_prefs.window;
+                    if let (Some(x), Some(y)) = (wp.x, wp.y) {
+                        let _ = w.set_position(tauri::Position::Physical(
+                            tauri::PhysicalPosition::new(x, y),
+                        ));
+                    }
+                    let _ = w.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
+                        wp.width,
+                        wp.height,
+                    )));
+                }
+            }
+
+            // 日志保留期清理
+            if startup_prefs.log_retention_days > 0 {
+                let days = startup_prefs.log_retention_days as u64;
+                let deadline = std::time::SystemTime::now()
+                    - std::time::Duration::from_secs(days * 24 * 3600);
+                if let Ok(meta) = std::fs::metadata(prefs::log_dir().join("launcher.log")) {
+                    if let Ok(m) = meta.modified() {
+                        if m < deadline {
+                            let _ = std::fs::remove_file(prefs::log_dir().join("launcher.log"));
+                        }
+                    }
+                }
+            }
+
+            if startup_prefs.auto_start {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let (ws, port) = {
+                        let state = handle.state::<HarnessState>();
+                        let inner = state.inner.lock().unwrap();
+                        (inner.workspace.clone(), inner.port)
+                    };
+                    let _ = harness::start(handle, ws, port, None).await;
+                });
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
-                let _ = window.hide();
+                let app = window.app_handle();
+                let state = app.state::<PrefsState>();
+                let p = state.inner.lock().unwrap().clone();
+                if p.remember_window {
+                    if let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) {
+                        let mut np = p.clone();
+                        np.window.x = Some(pos.x);
+                        np.window.y = Some(pos.y);
+                        np.window.width = size.width;
+                        np.window.height = size.height;
+                        *state.inner.lock().unwrap() = np.clone();
+                        let _ = prefs::save(&np);
+                    }
+                }
+                if p.close_behavior == "quit" {
+                    let app2 = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = harness::stop(app2.clone()).await;
+                        app2.exit(0);
+                    });
+                } else {
+                    let _ = window.hide();
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -384,6 +513,10 @@ pub fn run() {
             ping_endpoint,
             get_dsh_settings,
             set_dsh_settings,
+            get_launcher_prefs,
+            set_launcher_prefs,
+            set_autostart,
+            clear_launcher_cache,
         ])
         .run(tauri::generate_context!())
         .expect("error while running DSH Desktop");
