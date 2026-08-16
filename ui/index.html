@@ -679,7 +679,8 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
       <button class="btn-danger" id="btnDeleteSession">删除会话</button>
       <button class="btn-small" id="btnOpenTrash">回收站</button>
       <button class="btn-small" id="btnExportSession">导出</button>
-      <input type="text" id="sessionSearch" placeholder="搜索会话标题 / 工作区" style="flex:1;padding:5px 8px;border:1px solid var(--border-color);border-radius:3px;font-size:12px">
+      <button class="btn-small" id="btnSearchSession">搜索</button>
+      <input type="text" id="sessionSearch" placeholder="搜索标题 / 工作区 / 会话内容" style="flex:1;padding:5px 8px;border:1px solid var(--border-color);border-radius:3px;font-size:12px">
     </div>
     <div class="session-layout">
       <div class="session-list" id="sessionList">
@@ -1242,7 +1243,27 @@ async function loadSessions(){
   });
 }
 $("btnRefreshSessions")?.addEventListener("click",loadSessions);
-$("sessionSearch")?.addEventListener("keyup",e=>{if(e.key==="Enter")loadSessions()});
+$("sessionSearch")?.addEventListener("keyup",e=>{if(e.key==="Enter")searchSessions()});
+$("btnSearchSession")?.addEventListener("click",searchSessions);
+async function searchSessions(){
+  const q=($("sessionSearch")?.value||"").trim();
+  const box=$("sessionList");
+  if(!q){loadSessions();return}
+  box.innerHTML='<div class="session-empty" style="padding:20px;text-align:center;font-size:12px">正在全文检索...</div>';
+  let hits=[];
+  try{hits=await invoke("search_sessions",{query:q,limit:80})}
+  catch(e){box.innerHTML='<div class="session-empty" style="padding:20px;text-align:center;font-size:12px">搜索失败：'+escapeHtml(String(e))+'</div>';return}
+  box.innerHTML="";
+  if(!hits||!hits.length){box.innerHTML='<div class="session-empty" style="padding:20px;text-align:center;font-size:12px">没有匹配「'+escapeHtml(q)+'」的会话内容</div>';return}
+  hits.forEach(h=>{
+    const div=document.createElement("div");div.className="session-item";
+    div.innerHTML=`<div class="s-title">${escapeHtml(h.title)}</div>
+      <div class="s-meta">${escapeHtml(h.workspace||"")} · ${fmtTime(h.mtime_ms)}</div>
+      <div style="font-size:11px;color:var(--text-secondary);margin-top:5px;line-height:1.45">${escapeHtml(h.snippet)}</div>`;
+    div.onclick=()=>{currentSessionTitle=h.title;loadSessionDetail(h.id)};
+    box.appendChild(div);
+  });
+}
 $("btnDeleteSession")?.addEventListener("click",()=>{
   if(!currentSessionId){showConfirm("删除会话","请先选择左侧要删除的会话。",()=>{});return}
   showConfirm("删除会话","确定删除当前会话吗？会移入回收站，可恢复。",async()=>{

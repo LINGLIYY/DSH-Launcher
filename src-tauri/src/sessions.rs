@@ -26,6 +26,15 @@ pub struct TrashInfo {
     pub size: u64,
 }
 
+#[derive(Serialize)]
+pub struct SessionHit {
+    pub id: String,
+    pub workspace: String,
+    pub title: String,
+    pub mtime_ms: u64,
+    pub snippet: String,
+}
+
 fn sessions_root() -> PathBuf {
     let base = std::env::var("APPDATA").unwrap_or_else(|_| "C:\\".to_string());
     PathBuf::from(base)
@@ -139,6 +148,77 @@ pub fn list(filter: &str) -> Vec<SessionInfo> {
             let hay = format!("{} {} {}", title, ws_name, cwd).to_lowercase();
             if filter.is_empty() || hay.contains(&filter.to_lowercase()) {
                 out.push(info);
+            }
+        }
+    }
+    out.sort_by(|a, b| b.mtime_ms.cmp(&a.mtime_ms));
+    out
+}
+
+fn make_snippet(text: &str, byte_pos: usize) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let match_idx = text[..byte_pos].chars().count();
+    let start = match_idx.saturating_sub(45);
+    let end = (match_idx + 90).min(chars.len());
+    let seg: String = chars[start..end].iter().collect();
+    let mut s = seg.replace(['\n', '\r'], " ");
+    if start > 0 {
+        s = format!("…{s}");
+    }
+    if end < chars.len() {
+        s.push('…');
+    }
+    s
+}
+
+pub fn search(query: &str, limit: usize) -> Vec<SessionHit> {
+    let q = query.trim().to_lowercase();
+    let mut out = Vec::new();
+    if q.is_empty() {
+        return out;
+    }
+    let root = sessions_root();
+    if !root.is_dir() {
+        return out;
+    }
+    for ws in std::fs::read_dir(&root).into_iter().flatten().flatten() {
+        let ws_dir = ws.path();
+        if !ws_dir.is_dir() {
+            continue;
+        }
+        let ws_name = ws.file_name().to_string_lossy().into_owned();
+        for sid in std::fs::read_dir(&ws_dir).into_iter().flatten().flatten() {
+            let sid_dir = sid.path();
+            if !sid_dir.is_dir() {
+                continue;
+            }
+            let Some(file) = data_file(&sid_dir) else {
+                continue;
+            };
+            let Ok(bytes) = decode(&file) else {
+                continue;
+            };
+            let text = String::from_utf8_lossy(&bytes).into_owned();
+            let lower = text.to_lowercase();
+            let Some(pos) = lower.find(&q) else {
+                continue;
+            };
+            let (_, title) = header_and_title(&text);
+            let mtime_ms = std::fs::metadata(&file)
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            out.push(SessionHit {
+                id: sid.file_name().to_string_lossy().into_owned(),
+                workspace: ws_name.clone(),
+                title: title.clone(),
+                mtime_ms,
+                snippet: make_snippet(&lower, pos),
+            });
+            if out.len() >= limit.max(1) {
+                return out;
             }
         }
     }

@@ -226,6 +226,11 @@ fn list_sessions(filter: Option<String>) -> Result<Vec<sessions::SessionInfo>, S
 }
 
 #[tauri::command]
+fn search_sessions(query: String, limit: Option<usize>) -> Vec<sessions::SessionHit> {
+    sessions::search(&query, limit.unwrap_or(50))
+}
+
+#[tauri::command]
 fn list_plugins() -> Vec<capabilities::PluginInfo> {
     capabilities::list_plugins()
 }
@@ -703,6 +708,7 @@ pub fn run() {
             open_path,
             open_dir,
             list_sessions,
+            search_sessions,
             get_session,
             delete_session,
             list_trash,
