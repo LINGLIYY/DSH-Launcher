@@ -5,7 +5,6 @@
   "identifier": "dev.dsh.desktop",
   "build": {
     "frontendDist": "../ui",
-    "devUrl": "http://localhost:1420",
     "beforeDevCommand": "",
     "beforeBuildCommand": ""
   },
