@@ -210,6 +210,18 @@ fn ping_endpoint(endpoint: serde_json::Value) -> String {
 }
 
 #[tauri::command]
+fn get_dsh_settings() -> Result<String, String> {
+    let p = std::path::Path::new(&default_dsh_home()).join("settings.yaml");
+    std::fs::read_to_string(&p).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_dsh_settings(text: String) -> Result<(), String> {
+    let p = std::path::Path::new(&default_dsh_home()).join("settings.yaml");
+    std::fs::write(&p, text).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_session(id: String) -> Result<Vec<sessions::Block>, String> {
     sessions::render_by_id(&id)
 }
@@ -342,6 +354,8 @@ pub fn run() {
             list_mcp,
             scan_wsl,
             ping_endpoint,
+            get_dsh_settings,
+            set_dsh_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running DSH Desktop");

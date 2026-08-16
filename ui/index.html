@@ -430,53 +430,20 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
       <div class="settings-section" data-sec="runtime">
         <div class="settings-hint">以下配置直接读写当前端 DSH 的 settings.yaml，修改后需重启 DSH 生效。启动器不做统计，仅展示 DSH 原生配额与已用数据。</div>
 
-        <h3>全局运行参数</h3>
+                <h3>DSH settings.yaml 编辑器</h3>
         <div class="setting-item">
-          <div class="si-label"><span>监听地址</span></div>
-          <input type="text" id="cfgHost" value="127.0.0.1">
-          <div class="si-desc">DSH Web 服务绑定地址，默认仅本地访问。</div>
-        </div>
-        <div class="setting-item">
-          <div class="si-label"><span>监听端口</span></div>
-          <input type="number" id="cfgPort" value="7602">
-          <div class="si-desc">DSH Web 服务端口，修改后需重启。</div>
-        </div>
-        <div class="setting-item">
-          <div class="si-label"><span>允许跨域</span><div class="switch" id="swCors"></div></div>
-          <div class="si-desc">开启后允许其他域名页面调用 DSH API。</div>
-        </div>
-        <div class="setting-item">
-          <div class="si-label"><span>会话存储路径</span></div>
-          <input type="text" id="cfgSessionPath" value="%APPDATA%\dsh-desktop\harness\sessions">
-        </div>
-        <div class="setting-item">
-          <div class="si-label"><span>缓存大小限制 (MB)</span></div>
-          <input type="number" id="cfgCacheSize" value="512">
+          <div class="si-desc">直接读写 DeepSeek 官方 DSH 的 settings.yaml，修改后需重启 DSH 生效。</div>
+          <textarea id="dshSettingsText" rows="14" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--border-color);border-radius:3px;font-family:Consolas,monospace;font-size:12px;line-height:1.5;resize:vertical"></textarea>
+          <div style="display:flex;gap:6px;margin-top:6px">
+            <button class="btn-small" id="btnReloadDshSettings">重新加载</button>
+            <button class="btn-primary" id="btnSaveDshSettings">保存</button>
+          </div>
+          <div class="si-desc">保存会覆盖原文件，请确认 YAML 格式正确后再保存。</div>
         </div>
 
-        <h3 style="margin-top:20px">资源限额</h3>
-        <div class="setting-item">
-          <div class="si-label"><span>单会话最大 Token</span><span class="range-val" id="limitTokenVal">32000</span></div>
-          <input type="range" id="limitToken" min="4000" max="128000" step="2000" value="32000">
-          <div class="si-desc">单会话输入+输出 Token 上限，超出后触发超限行为。</div>
-        </div>
-        <div class="setting-item">
-          <div class="si-label"><span>同时活跃会话数</span><span class="range-val" id="limitSessionVal">5</span></div>
-          <input type="range" id="limitSession" min="1" max="20" value="5">
-        </div>
-        <div class="setting-item">
-          <div class="si-label"><span>单日总 Token 上限</span><span class="range-val" id="limitDailyVal">500000</span></div>
-          <input type="range" id="limitDaily" min="50000" max="2000000" step="10000" value="500000">
-        </div>
-        <div class="setting-item">
-          <div class="si-label"><span>超限行为</span></div>
-          <select id="overLimitBehavior">
-            <option value="warn">仅弹窗提醒</option>
-            <option value="stop">停止生成</option>
-          </select>
-        </div>
-
-        <h3 style="margin-top:20px">用量概览（当前端）</h3>
+        <h3 style="margin-top:20px">资源限额与用量</h3>
+        <div class="setting-item"><div class="si-desc">DSH 未暴露独立的资源限额配置，此项待官方能力确认后接入；下方用量概览同样待接入。</div></div>
+<h3 style="margin-top:20px">用量概览（当前端）</h3>
         <div class="usage-item">
           <div class="ui-label"><span>当日已消耗 Token</span><span class="val" id="usageToken">128,450 / 500,000</span></div>
           <div class="usage-bar"><div class="fill" id="barToken" style="width:25.7%"></div></div>
@@ -699,7 +666,6 @@ const PROTO_CMDS = new Set([
   "toggle_mcp","test_mcp","add_mcp","remove_mcp",
   "get_market","install_market_plugin",
   "get_usage_stats","get_usage_limits","set_usage_limits",
-  "get_dsh_settings","set_dsh_settings",
   "export_config","import_config","reset_config",
   "list_endpoints","add_endpoint","update_endpoint","remove_endpoint","set_active_endpoint"
 ]);
@@ -757,7 +723,6 @@ function setActiveEndpoint(id){
   $("workspacePath").textContent="工作区："+(ep.workspace||"未设置");
   $("urlInput").value=`http://127.0.0.1:${ep.port}/`;
   $("openUrlLink").textContent=`http://127.0.0.1:${ep.port}/`;
-  $("cfgPort").value=ep.port;
   appendLog(`[多端] 已切换到「${ep.name}」（${ep.type}，端口 ${ep.port}）`,"log-ready");
   if(document.querySelector('.tab-content[data-tab="capability"]').classList.contains("active")){
     renderPlugins();renderSkills();renderMcp();
@@ -948,7 +913,7 @@ document.querySelectorAll(".settings-nav .nav-item").forEach(item=>{
     item.classList.add("active");
     document.querySelectorAll(".settings-section").forEach(s=>s.classList.remove("active"));
     document.querySelector(`.settings-section[data-sec="${item.dataset.sec}"]`).classList.add("active");
-    if(item.dataset.sec==="runtime")refreshUsage();
+    if(item.dataset.sec==="runtime"){refreshUsage();loadDshSettings()}
     if(item.dataset.sec==="endpoints")renderEndpointList();
   };
 });
@@ -1259,6 +1224,18 @@ function refreshUsage(){
 }
 $("btnRefreshUsage")?.addEventListener("click",refreshUsage);
 $("btnExportUsage")?.addEventListener("click",()=>appendLog("[用量] 用量记录已导出","log-ready"));
+
+async function loadDshSettings(){
+  try{ $("dshSettingsText").value = await invoke("get_dsh_settings"); }
+  catch(e){ $("dshSettingsText").value = "读取失败：" + e; }
+}
+$("btnReloadDshSettings")?.addEventListener("click",loadDshSettings);
+$("btnSaveDshSettings")?.addEventListener("click",async()=>{
+  try{
+    await invoke("set_dsh_settings",{text:$("dshSettingsText").value});
+    appendLog("[配置] settings.yaml 已保存，重启 DSH 后生效","log-ready");
+  }catch(e){appendLog("保存失败："+e,"log-error")}
+});
 ["limitToken","limitSession","limitDaily"].forEach(id=>{const el=$(id);if(!el)return;el.oninput=function(){$(id+"Val").textContent=(+this.value).toLocaleString()}});
 
 /* ============================================================
