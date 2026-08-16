@@ -424,14 +424,16 @@ pub fn run() {
                 if startup_prefs.remember_window {
                     let wp = &startup_prefs.window;
                     if let (Some(x), Some(y)) = (wp.x, wp.y) {
-                        let _ = w.set_position(tauri::Position::Physical(
-                            tauri::PhysicalPosition::new(x, y),
-                        ));
+                        if x >= 0 && y >= 0 && wp.width <= 3000 && wp.height <= 2000 {
+                            let _ = w.set_position(tauri::Position::Physical(
+                                tauri::PhysicalPosition::new(x, y),
+                            ));
+                            let _ = w.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
+                                wp.width,
+                                wp.height,
+                            )));
+                        }
                     }
-                    let _ = w.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
-                        wp.width,
-                        wp.height,
-                    )));
                 }
             }
 
@@ -469,14 +471,19 @@ pub fn run() {
                 let state = app.state::<PrefsState>();
                 let p = state.inner.lock().unwrap().clone();
                 if p.remember_window {
-                    if let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) {
-                        let mut np = p.clone();
-                        np.window.x = Some(pos.x);
-                        np.window.y = Some(pos.y);
-                        np.window.width = size.width;
-                        np.window.height = size.height;
-                        *state.inner.lock().unwrap() = np.clone();
-                        let _ = prefs::save(&np);
+                    let maximized = window.is_maximized().unwrap_or(false);
+                    if !maximized {
+                        if let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) {
+                            if pos.x >= 0 && pos.y >= 0 && size.width <= 3000 && size.height <= 2000 {
+                                let mut np = p.clone();
+                                np.window.x = Some(pos.x);
+                                np.window.y = Some(pos.y);
+                                np.window.width = size.width;
+                                np.window.height = size.height;
+                                *state.inner.lock().unwrap() = np.clone();
+                                let _ = prefs::save(&np);
+                            }
+                        }
                     }
                 }
                 if p.close_behavior == "quit" {

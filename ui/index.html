@@ -1108,6 +1108,10 @@ $("openUrlLink").onclick=()=>invoke("open_browser",{endpoint_id:currentEndpoint(
 $("btnOpenBrowser").onclick=()=>invoke("open_browser",{endpoint_id:currentEndpoint().id});
 $("btnOpenLogDir").onclick=()=>invoke("open_logs_dir");
 $("btnOpenLogDir2").onclick=()=>invoke("open_logs_dir");
+$("btnClearCache")?.addEventListener("click",()=>showConfirm("清空启动器缓存","确定清空启动器缓存吗？会重置偏好并清理日志，之后界面刷新。",async()=>{
+  try{await invoke("clear_launcher_cache");appendLog("[缓存] 已清空，界面即将刷新","log-stop");setTimeout(()=>location.reload(),500)}
+  catch(e){appendLog("清空失败："+e,"log-error")}
+}));
 $("btnHideTray").onclick=()=>invoke("hide_to_tray");
 $("btnPickWorkspace").onclick=async function(){
   const p=await invoke("pick_workspace");
