@@ -12,10 +12,11 @@
   --safe-padding:16px;--gap-block:12px;
   --kanban-width:340px;--kanban-opacity:0.38;--kanban-bottom:24px;
   --drawer-width:440px;
+  --ui-zoom:1;--market-cols:2;
 }
 *{margin:0;padding:0;box-sizing:border-box;font-family:"Microsoft YaHei",system-ui,sans-serif}
 html,body{height:100%}
-body{background:var(--bg-window);overflow:hidden;position:relative;height:100vh}
+body{background:var(--bg-window);overflow:hidden;position:relative;height:calc(100vh / var(--ui-zoom,1));zoom:var(--ui-zoom,1)}
 
 /* ===== 看板娘 ===== */
 .kanban-overlay{position:fixed;right:24px;bottom:var(--kanban-bottom);width:var(--kanban-width);
@@ -255,7 +256,7 @@ body{background:var(--bg-window);overflow:hidden;position:relative;height:100vh}
 .market-box .mb-toolbar input{flex:1;padding:6px 8px;border:1px solid var(--border-color);border-radius:3px;font-size:12px}
 .market-box .mb-toolbar select{padding:6px 8px;border:1px solid var(--border-color);border-radius:3px;font-size:12px;max-width:180px}
 .market-box .mb-toolbar .btn-small.active{background:var(--primary-blue);color:#fff;border-color:var(--primary-blue)}
-.market-box .mb-body{flex:1;overflow-y:auto;overflow-x:hidden;padding:12px 16px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-content:start;min-width:0}
+.market-box .mb-body{flex:1;overflow-y:auto;overflow-x:hidden;padding:12px 16px;display:grid;grid-template-columns:repeat(var(--market-cols,2),minmax(0,1fr));gap:10px;align-content:start;min-width:0}
 .market-empty{grid-column:1/-1;text-align:center;padding:24px 12px;color:var(--text-secondary);font-size:12px}
 .market-card{border:1px solid var(--border-color);border-radius:6px;padding:10px;background:#fff;min-width:0}
 .market-card .mc-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
@@ -402,6 +403,19 @@ body{background:var(--bg-window);overflow:hidden;position:relative;height:100vh}
         <div class="setting-item">
           <button class="btn-small" id="btnClearCache">清空启动器缓存</button>
           <button class="btn-small" id="btnOpenLogDir" style="margin-left:6px">打开日志目录</button>
+        </div>
+
+        <h3 style="margin-top:20px">界面缩放</h3>
+        <div class="setting-item">
+          <div class="si-label"><span>缩放比例</span><span class="range-val" id="uiZoomVal">100%</span></div>
+          <input type="range" id="uiZoom" min="80" max="130" step="5" value="100">
+          <div class="si-desc">调整整体界面缩放；默认 100% 为原始尺寸。锁定后滑块不可调，防止误改。</div>
+        </div>
+        <div class="setting-item">
+          <div class="si-label"><span>锁定缩放</span><div class="switch" id="swLockZoom"></div></div>
+        </div>
+        <div class="setting-item">
+          <button class="btn-small" id="btnResetZoom">恢复默认（100%）</button>
         </div>
       </div>
 
@@ -569,6 +583,11 @@ body{background:var(--bg-window);overflow:hidden;position:relative;height:100vh}
         <option value="name">名称排序</option>
         <option value="added">最近添加</option>
       </select>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary)">
+        列数
+        <input type="range" id="marketColumns" min="2" max="5" step="1" value="2" style="width:70px">
+        <span id="marketColumnsVal">2</span>
+      </label>
       <button class="btn-small" id="btnMarketRecommend">推荐</button>
       <button class="btn-small" id="marketRefresh">刷新</button>
     </div>
@@ -1129,7 +1148,7 @@ function setSwitch(id,on){const el=$(id);if(el)el.classList.toggle("on",!!on)}
 function isSwitchOn(id){return !!($(id)&&$(id).classList.contains("on"))}
 async function loadLauncherPrefs(){
   try{launcherPrefs=await invoke("get_launcher_prefs")}
-  catch(e){launcherPrefs={close_behavior:"tray",single_instance:true,remember_window:true,auto_start:false,auto_open_browser:false,always_on_top:false,port_policy:"takeover",save_log:true,log_retention_days:15}}
+  catch(e){launcherPrefs={close_behavior:"tray",single_instance:true,remember_window:true,auto_start:false,auto_open_browser:false,always_on_top:false,ui_zoom:1,ui_zoom_locked:false,port_policy:"takeover",save_log:true,log_retention_days:15}}
   $("closeBehavior").value=launcherPrefs.close_behavior||"tray";
   $("launchBehavior").value=launcherPrefs.auto_start?"auto":"manual";
   setSwitch("swAutoBrowser",!!launcherPrefs.auto_open_browser);
@@ -1141,6 +1160,7 @@ async function loadLauncherPrefs(){
   setSwitch("swSingleInstance",true);
   $("swSingleInstance").classList.add("locked");
   $("swSingleInstance").title="当前版本固定开启，避免多实例";
+  applyUiZoom();
 }
 async function saveLauncherPrefs(){
   if(!launcherPrefs)return;
@@ -1149,12 +1169,37 @@ async function saveLauncherPrefs(){
   launcherPrefs.close_behavior=$("closeBehavior").value;
   launcherPrefs.remember_window=isSwitchOn("swRememberWin");
   launcherPrefs.always_on_top=isSwitchOn("swAlwaysOnTop");
+  launcherPrefs.ui_zoom=parseInt($("uiZoom")?.value||"100")/100;
+  launcherPrefs.ui_zoom_locked=isSwitchOn("swLockZoom");
   launcherPrefs.save_log=isSwitchOn("swSaveLog");
   launcherPrefs.log_retention_days=parseInt($("logRetention").value||"15");
   launcherPrefs.port_policy=$("portPolicy").value;
   launcherPrefs.single_instance=true;
   try{await invoke("set_launcher_prefs",{prefsJson:launcherPrefs})}catch(e){appendLog("保存偏好失败："+e,"log-error")}
 }
+function applyUiZoom(){
+  const z=(launcherPrefs&&typeof launcherPrefs.ui_zoom==="number"&&launcherPrefs.ui_zoom>0)?launcherPrefs.ui_zoom:1;
+  document.documentElement.style.setProperty("--ui-zoom",String(z));
+  if($("uiZoom"))$("uiZoom").value=Math.round(z*100);
+  if($("uiZoomVal"))$("uiZoomVal").textContent=Math.round(z*100)+"%";
+  const locked=!!(launcherPrefs&&launcherPrefs.ui_zoom_locked);
+  setSwitch("swLockZoom",locked);
+  if($("uiZoom"))$("uiZoom").disabled=locked;
+}
+$("uiZoom").addEventListener("input",function(){
+  document.documentElement.style.setProperty("--ui-zoom",String(+this.value/100));
+  $("uiZoomVal").textContent=this.value+"%";
+});
+$("uiZoom").addEventListener("change",function(){launcherPrefs.ui_zoom=+this.value/100;saveLauncherPrefs()});
+$("swLockZoom").addEventListener("click",()=>{
+  const on=!isSwitchOn("swLockZoom");setSwitch("swLockZoom",on);$("uiZoom").disabled=on;
+  launcherPrefs.ui_zoom_locked=on;saveLauncherPrefs();
+});
+$("btnResetZoom").addEventListener("click",()=>{
+  launcherPrefs.ui_zoom=1;launcherPrefs.ui_zoom_locked=false;
+  document.documentElement.style.setProperty("--ui-zoom","1");
+  applyUiZoom();saveLauncherPrefs();appendLog("[缩放] 已恢复默认 100%","log-stop");
+});
 $("closeBehavior").addEventListener("change",saveLauncherPrefs);
 $("launchBehavior").addEventListener("change",saveLauncherPrefs);
 $("logRetention").addEventListener("change",saveLauncherPrefs);
@@ -1629,6 +1674,20 @@ $("marketStatus")?.addEventListener("change",renderMarket);
 $("marketSource")?.addEventListener("change",renderMarket);
 $("marketSort")?.addEventListener("change",renderMarket);
 $("marketRefresh")?.addEventListener("click",()=>loadMarket(true));
+const MARKET_COLS_KEY="dsh_market_cols";
+function applyMarketCols(){
+  const v=parseInt(localStorage.getItem(MARKET_COLS_KEY)||"2");
+  const c=Math.max(2,Math.min(5,v));
+  document.documentElement.style.setProperty("--market-cols",String(c));
+  if($("marketColumns")){$("marketColumns").value=c;$("marketColumnsVal").textContent=c}
+}
+$("marketColumns")?.addEventListener("input",function(){
+  const c=+this.value;
+  document.documentElement.style.setProperty("--market-cols",String(c));
+  if($("marketColumnsVal"))$("marketColumnsVal").textContent=c;
+  localStorage.setItem(MARKET_COLS_KEY,String(c));
+  renderMarket();
+});
 
 /* ============================================================
    Skill 管理
