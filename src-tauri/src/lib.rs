@@ -380,16 +380,21 @@ fn empty_trash() -> Result<usize, String> {
 
 #[tauri::command]
 fn copy_text(text: String) -> Result<(), String> {
+    copy_clipboard(&text);
+    Ok(())
+}
+
+fn copy_clipboard(text: &str) {
     use std::io::Write;
-    let mut child = std::process::Command::new("clip")
+    if let Ok(mut child) = std::process::Command::new("clip")
         .stdin(std::process::Stdio::piped())
         .spawn()
-        .map_err(|e| e.to_string())?;
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(text.as_bytes());
+    {
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(text.as_bytes());
+        }
+        let _ = child.wait();
     }
-    let _ = child.wait();
-    Ok(())
 }
 
 #[tauri::command]
@@ -442,10 +447,16 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 
     let show = MenuItem::with_id(app, "show", "显示控制台", true, None::<&str>)?;
     let open = MenuItem::with_id(app, "open", "打开 DSH 界面", true, None::<&str>)?;
+    let copy_url = MenuItem::with_id(app, "copy_url", "复制访问地址", true, None::<&str>)?;
+    let logs = MenuItem::with_id(app, "logs", "打开日志目录", true, None::<&str>)?;
+    let sessions = MenuItem::with_id(app, "sessions", "打开会话目录", true, None::<&str>)?;
     let start = MenuItem::with_id(app, "start", "启动 Harness", true, None::<&str>)?;
     let stop = MenuItem::with_id(app, "stop", "停止 Harness", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &open, &start, &stop, &quit])?;
+    let menu = Menu::with_items(
+        app,
+        &[&show, &open, &copy_url, &logs, &sessions, &start, &stop, &quit],
+    )?;
 
     let mut builder = TrayIconBuilder::with_id("main-tray")
         .tooltip("DSH Desktop")
@@ -469,6 +480,23 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                     format!("http://{}:{}/", inner.host, inner.port)
                 };
                 let _ = harness::open_url(&url);
+            }
+            "copy_url" => {
+                let url = {
+                    let state = app.state::<HarnessState>();
+                    let inner = state.inner.lock().unwrap();
+                    format!("http://{}:{}/", inner.host, inner.port)
+                };
+                copy_clipboard(&url);
+            }
+            "logs" => {
+                let _ = harness::open_path(std::path::Path::new(&default_logs_dir()));
+            }
+            "sessions" => {
+                let _ = harness::open_path(std::path::Path::new(&format!(
+                    "{}\\sessions",
+                    default_dsh_home()
+                )));
             }
             "start" => {
                 let app2 = app.clone();

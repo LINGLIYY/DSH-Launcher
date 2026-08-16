@@ -648,6 +648,7 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
       <div class="log-footer">
         <span class="log-clear" id="clearLog">清空日志</span>
         <span class="log-clear" id="copyLog">复制日志</span>
+        <span class="log-clear" id="exportLog">导出日志</span>
         <span id="logLineCount">0</span>
       </div>
     </div>
@@ -659,6 +660,7 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
       <button class="btn-small" id="btnRefreshSessions">刷新</button>
       <button class="btn-danger" id="btnDeleteSession">删除会话</button>
       <button class="btn-small" id="btnOpenTrash">回收站</button>
+      <button class="btn-small" id="btnExportSession">导出</button>
       <input type="text" id="sessionSearch" placeholder="搜索会话标题 / 工作区" style="flex:1;padding:5px 8px;border:1px solid var(--border-color);border-radius:3px;font-size:12px">
     </div>
     <div class="session-layout">
@@ -902,6 +904,7 @@ document.addEventListener("click",()=>$("endpointDropdown").classList.remove("sh
 let dshRunning=false;
 let logLines=0;
 let currentSessionId=null;
+let currentSessionTitle="";
 
 function $(id){return document.getElementById(id)}
 function escapeHtml(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
@@ -1179,6 +1182,13 @@ $("copyLog").onclick=async()=>{
   try{const t=await invoke("read_launcher_log");if(!t){appendLog("[复制] 日志为空","log-stop");return}await copyToClipboard(t,"启动器日志")}
   catch(e){appendLog("[复制] 读取日志失败："+e,"log-error")}
 };
+$("exportLog").onclick=async()=>{
+  try{
+    const t=await invoke("read_launcher_log");
+    const p=await invoke("save_text_file",{defaultName:"dsh-launcher.log",content:t||""});
+    if(p)appendLog(`[日志] 已导出：${p}`,"log-ready");
+  }catch(e){appendLog("导出日志失败："+e,"log-error")}
+};
 async function loadDshVersion(){
   try{
     const v=await invoke("dsh_version");
@@ -1208,7 +1218,7 @@ async function loadSessions(){
     const div=document.createElement("div");div.className="session-item";
     div.innerHTML=`<div class="s-title">${s.title||"未命名会话"}</div>
       <div class="s-meta">${s.workspace||""} · ${fmtTime(s.mtime_ms)} · ${(s.size/1024).toFixed(1)}KB</div>`;
-    div.onclick=()=>loadSessionDetail(s.id);
+    div.onclick=()=>{currentSessionTitle=s.title||"未命名会话";loadSessionDetail(s.id)};
     box.appendChild(div);
   });
 }
@@ -1225,6 +1235,20 @@ $("btnDeleteSession")?.addEventListener("click",()=>{
       appendLog("[会话] 已删除并移入回收站","log-stop");
     }catch(e){appendLog("删除失败："+e,"log-error")}
   });
+});
+$("btnExportSession")?.addEventListener("click",async()=>{
+  if(!currentSessionId){showConfirm("导出会话","请先选择左侧要导出的会话。",()=>{});return}
+  try{
+    const blocks=await invoke("get_session",{id:currentSessionId,endpoint_id:currentEndpoint().id});
+    const roleName={user:"用户",assistant:"助手",tool:"工具调用",result:"工具结果",info:"信息"};
+    let md=`# ${currentSessionTitle}\n\n`;
+    md+=`- 会话 ID：${currentSessionId}\n- 导出时间：${new Date().toLocaleString()}\n\n---\n\n`;
+    (blocks||[]).forEach(b=>{
+      md+=`## ${roleName[b.kind]||b.kind||"内容"}\n\n${b.text||""}\n\n`;
+    });
+    const p=await invoke("save_text_file",{defaultName:`session-${currentSessionId}.md`,content:md});
+    if(p)appendLog(`[会话] 已导出：${p}`,"log-ready");
+  }catch(e){appendLog("导出会话失败："+e,"log-error")}
 });
 async function loadSessionDetail(id){
   currentSessionId=id;
