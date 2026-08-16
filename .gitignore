@@ -4,6 +4,7 @@ resources/harness/
 dist/
 dist2/
 out/
+downloads/
 .tmp-upstream-dsh/
 一些内容反馈/
 *.log

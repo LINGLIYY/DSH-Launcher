@@ -15,21 +15,9 @@
     "agent"
   ],
   "scripts": {
-    "postinstall": "patch-package && node scripts/install-brand-assets.mjs && node scripts/install-agent-presets.mjs && install-electron --no",
-    "dev": "electron-vite dev",
-    "build": "electron-vite build",
-    "icons:generate": "node scripts/generate-app-icons.mjs",
-    "preview": "electron-vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.node.json",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "dist": "npm run package:win",
-    "dist:portable": "node scripts/verify-target.mjs win32 x64 && npm run build && electron-builder --win zip --x64 --publish never",
-    "package:dir": "npm run build && electron-builder --dir",
-    "package:mac": "npm run build && electron-builder --mac --publish never",
-    "package:mac:arm64": "node scripts/verify-target.mjs darwin arm64 && npm run build && electron-builder --mac --arm64 --publish never",
-    "package:mac:x64": "node scripts/verify-target.mjs darwin x64 && npm run build && electron-builder --mac --x64 --publish never",
-    "package:win": "node scripts/verify-target.mjs win32 x64 && npm run build && electron-builder --win --x64 --publish never"
+    "start": "python launch.py",
+    "launch": "python launch.py",
+    "icons:generate": "node scripts/generate-app-icons.mjs"
   },
   "dependencies": {
     "@deepseek-ai/cordis-plugin-group": "1.0.1",
@@ -63,63 +51,5 @@
     "typescript": "5.9.3",
     "vitest": "^4.1.10",
     "yaml": "^2.8.3"
-  },
-  "build": {
-    "appId": "dev.dsh.desktop",
-    "productName": "DSH Desktop",
-    "asar": false,
-    "npmRebuild": false,
-    "directories": {
-      "output": "dist",
-      "buildResources": "build"
-    },
-    "files": [
-      "out/**/*",
-      "node_modules/**/*",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "build/app-icon.png",
-        "to": "icon.png"
-      }
-    ],
-    "artifactName": "dsh-desktop-${os}-${arch}.${ext}",
-    "mac": {
-      "category": "public.app-category.developer-tools",
-      "icon": "build/icon.icns",
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false,
-      "target": [
-        "dmg",
-        "zip"
-      ]
-    },
-    "win": {
-      "icon": "build/icon.png",
-      "verifyUpdateCodeSignature": false,
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "x64"
-          ]
-        }
-      ]
-    },
-    "nsis": {
-      "artifactName": "${productName}-${version}-setup.${ext}",
-      "oneClick": false,
-      "perMachine": true,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
-    }
   }
 }

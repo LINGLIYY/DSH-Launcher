@@ -34,9 +34,32 @@ DSH Desktop packages the local DeepSeek Harness web experience as a desktop appl
 
 ## Download
 
-Download DSH Desktop for macOS and Windows from the [official website](https://www.dshdesktop.com/#download).
+This repository no longer ships installers. DSH is installed through the official npm command and launched with the included Python script.
 
-Installed macOS and Windows builds check for updates automatically after startup and every six hours. Updates download in the background and prompt you to restart when they are ready. You can also choose **Check for Updates…** from the application menu.
+### First-time setup
+
+1. Install [Node.js](https://nodejs.org/) (20+) and Python 3.
+2. Install DSH globally with the official command:
+
+   ```sh
+   npm install -g @deepseek-ai/dsh
+   ```
+
+3. Verify: `dsh --version`
+
+### Launch
+
+Double-click **`启动 DSH.bat`** in the repo root, or run:
+
+```sh
+python launch.py
+```
+
+The script reuses `%APPDATA%\dsh-desktop\harness` as the data directory (session memory, settings, credentials and plugin patches are preserved), waits until the Harness is ready, then opens the browser. Press `Ctrl+C` to stop.
+
+Optional flags: `--port 7602`, `--workspace <dir>`, `--no-browser`.
+
+> Note: sessions/settings live in `%APPDATA%\dsh-desktop\harness` and survive uninstalls or reinstallation.
 
 ## Community
 
@@ -68,6 +91,7 @@ DeepSeek Harness already provides a complete agent runtime and Web UI. DSH Deskt
 - Removes Node.js privileges from the renderer and enables `contextIsolation`, sandboxing, and navigation restrictions
 - Uses the DSH brand logo consistently in the desktop window and Harness sidebar
 - Imports and exports complete custom Agent presets as portable [`.dshpreset` packages](docs/preset-packages.md), with conflict checks and a trust warning before installation
+- Ships a read-only "Review Mode" agent preset (`agent-presets/review/`) plus a [customization and extension roadmap](docs/customization-roadmap.md) for further modes, skills, and permissions
 - Includes a production DSH app icon in macOS ICNS and Windows ICO formats
 
 ## Model providers
@@ -154,8 +178,9 @@ Harness runs in a separate Electron Node child process. The `--expose-internals`
 ```text
 src/main/             Electron main process, windows, and Harness lifecycle
 src/shared/           Shared runtime types
+agent-presets/        Shipped Agent presets (work modes), injected by scripts/install-agent-presets.mjs
 patches/              Reproducible UI customizations for the pinned DSH version
-scripts/              Brand-asset installation and target-platform packaging checks
+scripts/              Brand-asset and preset installation, target-platform packaging checks
 test/                 Settings, runtime, security, and provider coverage tests
 build/                Application icon assets
 ```

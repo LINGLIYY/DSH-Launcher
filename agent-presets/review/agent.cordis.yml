@@ -1,0 +1,137 @@
+# The `review` agent preset: a read-only code-review and audit agent.
+#
+# It is `standard` minus the mutating/delegating surface: no goal tracking, no
+# subagents, no workflows, no ralph loops, no todo list, and no plan mode.
+# What remains is the full READ surface (read / glob / grep / read_image),
+# shell for `git diff` / `git log` and read-only verification commands, web
+# search for docs and advisories, and a bundled `code-review` skill.
+#
+# READ-ONLY IS PROMPT-ENFORCED HERE, NOT SANDBOX-ENFORCED. The `tool-fs` row
+# below registers `write` and `edit` together with `read` — there is no
+# read-only subset to compose — and shell can mutate. The persona and the
+# `code-review` skill forbid mutation; for a hard guarantee, run the session
+# under the `read-only` sandbox mode (Settings → Permissions), which denies
+# every write at the sandbox layer regardless of which tools are listed.
+#
+# This file is an AGENT-PLANE composition. The roster mounts it once per
+# session; the host composition (`base.cordis.yml` + `web.cordis.yml`) keeps
+# everything a preset must not own: the registries themselves, the sandbox and
+# approval stack, persistence, and the model route.
+#
+# A service row here MUST sit inside a group carrying an `isolate` realm.
+# Without one it publishes into the root realm, where it is process-global —
+# another preset publishing the same name collides. `true` means an
+# entry-local realm: this standing mount's own private instance.
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+# The preset's own persona, shadowing the deployment default for this agent.
+# `{{model}}` and `{{cwd}}` resolve from the agent's own route and workspace.
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: |-
+      You are a code review agent powered by the {{model}} model, running on the DeepSeek Harness. Your working directory is {{cwd}}.
+
+      Your job is to REVIEW, not to change. Treat this session as read-only: you inspect code, changes, configuration, and behavior, then report findings and recommendations. You never edit or create files, never run commands that mutate the working tree or the system (no writes, no installs, no formatters or code generation that rewrite tracked files, no commits, no deletions), and never run anything whose purpose is a side effect. Use `read`, `glob`, `grep`, and `read_image` for inspection, and only read-only shell commands — `git diff`, `git log`, `git status`, `git show`, and analysis such as lint, typecheck, or tests that do not modify sources. When a finding must be fixed, describe the change precisely instead of applying it.
+
+      Structure every review as: a one-line verdict; a prioritized list of findings (severity, file:line, what is wrong, why it matters, a concrete suggested fix); and a short list of questions or risks that need the user's decision. Separate blockers from nitpicks. Prefer evidence from the actual repository over assumptions, and say plainly what you did not inspect.
+
+      Load the `code-review` skill before producing a full review.
+
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── shell ───────────────────────────────────────────────────────────────────
+
+# `shell-env` stays in the HOST composition; both shell tools consume the host
+# registry from here and their executors (`bash-sandbox`/`pwsh-sandbox`) are
+# host-plane too. Shell exists for `git diff`/`git log` and read-only checks;
+# the read-only mandate lives in the persona and skill.
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+# ── filesystem ──────────────────────────────────────────────────────────────
+
+# Both register into the host `tools` registry and provide nothing, so they
+# need no realm. `tool-fs` registers `read`/`write`/`edit`/`read_image`
+# together; the persona forbids the mutating two, and the `read-only` sandbox
+# mode hard-denies them.
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# ── background jobs ────────────────────────────────────────────────────────
+
+# The task REGISTRY stays on the host plane; only the model-facing controls are
+# per-session. A reviewer may start a long lint/test run in the background and
+# collect it later.
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+
+# ── skills ──────────────────────────────────────────────────────────────────
+
+# The skill REGISTRY lives in the host composition and is layered per scope.
+# `skill-filesystem` contributes local-root discovery and, via
+# `customSkillDirs`, the preset's own bundled `code-review` skill; `tool-skill`
+# gives the agent the catalog and loader.
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+  config:
+    customSkillDirs:
+      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+# ── compaction ──────────────────────────────────────────────────────────────
+
+# `compaction-basic` reads `toolResultPrune` through `ctx.get`, so the pruner
+# must share this realm rather than sit outside it. Long review sessions fold
+# their history the same way `standard` does.
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# ── remaining model-facing rows ─────────────────────────────────────────────
+
+# A reviewer may ask for scope, target files, or acceptance criteria that only
+# the user owns.
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+# The `web` service and its search provider stay in the host composition; only
+# the model-facing tool is per-session. Search is useful for checking security
+# advisories and API contracts; arbitrary fetches stay disabled (SSRF).
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: false
+    searchTimeoutMs: 60000

@@ -29,9 +29,33 @@ DSH Desktop 把 DeepSeek Harness 的本地 Web 体验封装为桌面应用：应
 
 ## 下载安装
 
-请前往 [DSH Desktop 官网](https://www.dshdesktop.com/#download)下载 macOS 和 Windows 安装包。
+本仓库已停止打包安装器，改用「官方命令安装 DSH + Python 启动脚本」的方式。
 
-已安装的 macOS 和 Windows 版本会在启动后及每六小时自动检查更新。更新将在后台下载，准备完成后提示重启安装；也可以从应用菜单选择 **检查更新…** 手动检查。
+### 首次准备
+
+1. 安装 [Node.js](https://nodejs.org/)（20 或更高版本）与 Python 3。
+2. 用官方命令全局安装 DSH：
+
+   ```sh
+   npm install -g @deepseek-ai/dsh
+   ```
+
+3. 验证：`dsh --version`
+
+### 启动
+
+双击根目录的 **`启动 DSH.bat`**，或运行：
+
+```sh
+python launch.py
+```
+
+脚本会复用 `%APPDATA%\dsh-desktop\harness` 作为数据目录（会话记忆、设置、登录凭据、插件补丁都保留），
+等待 Harness 就绪后自动打开浏览器；按 `Ctrl+C` 停止。
+
+可选参数：`--port 7602`（端口）、`--workspace <目录>`（默认工作区）、`--no-browser`（不自动开浏览器）。
+
+> 提示：会话记忆/设置存放在 `%APPDATA%\dsh-desktop\harness`，卸载或重装程序都不会影响它。
 
 ## 加入社区
 
@@ -63,6 +87,7 @@ DeepSeek Harness 本身提供完整的 Agent Runtime 与 Web UI。DSH Desktop �
 - Renderer 关闭 Node.js 权限，启用 `contextIsolation`、sandbox 与导航限制
 - 在桌面窗口与 Harness 侧栏统一使用 DSH 品牌 Logo
 - 可把完整的自定义 Agent 预设导入/导出为便携的 [`.dshpreset` 压缩包](docs/preset-packages.md)，安装前会检查命名冲突并提示信任风险
+- 内置「审查模式」只读代码审查预设（`agent-presets/review/`），并预留了更多模式/技能/权限的[扩展路线图](docs/customization-roadmap.md)
 - 正式 DSH 应用图标，支持 macOS ICNS 与 Windows ICO
 
 ## 模型提供方
@@ -149,8 +174,9 @@ Harness 运行在独立的 Electron Node 子进程中。Cordis HMR 所需的 `--
 ```text
 src/main/             Electron 主进程、窗口与 Harness 生命周期
 src/shared/           共享运行时类型
+agent-presets/        内置 Agent 预设（工作模式），由 scripts/install-agent-presets.mjs 注入
 patches/              对固定 DSH 版本的可复现界面定制
-scripts/              品牌资源安装与目标平台打包检查
+scripts/              品牌资源、预设安装与目标平台打包检查
 test/                 设置、运行时、安全和 Provider 覆盖测试
 build/                应用图标资源
 ```
