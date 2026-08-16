@@ -405,7 +405,7 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
 
       <!-- ===== 多端管理 ===== -->
       <div class="settings-section" data-sec="endpoints">
-        <div class="settings-hint">多端管理：统一管理本机 Windows、WSL 各发行版、远程 SSH 中的 DSH 实例。当前版本对 WSL / SSH 端支持启停与连通检测；会话、插件、技能等数据读取仅对接本机 Windows 的 DSH_HOME。</div>
+        <div class="settings-hint">多端管理：统一管理本机 Windows、WSL 各发行版中的 DSH 实例。SSH 远程端暂待开发（DSH 目前不能安全地直接暴露到公网）。WSL 端支持启停与连通检测；会话、插件、技能等数据读取仅对接本机 Windows 的 DSH_HOME。</div>
         <div style="display:flex;gap:6px;margin-bottom:12px">
           <button class="btn-small" id="btnScanEndpoints">自动扫描 WSL</button>
           <button class="btn-small" id="btnRefreshEndpoints">刷新状态</button>
@@ -423,7 +423,7 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
             <select id="newEpType">
               <option value="windows">Windows 本地</option>
               <option value="wsl">WSL 子系统</option>
-              <option value="ssh">SSH 远程</option>
+              <option value="ssh" disabled>SSH 远程（待开发）</option>
             </select>
           </div>
           <div class="form-row">
@@ -818,7 +818,7 @@ function setActiveEndpoint(id){
   }
 }
 
-function typeLabel(t){return t==="windows"?"Windows":t==="wsl"?"WSL":"SSH 远程"}
+function typeLabel(t){return t==="windows"?"Windows":t==="wsl"?"WSL":"SSH 远程（待开发）"}
 function typeTagClass(t){return t==="windows"?"tag-builtin":t==="wsl"?"tag-wsl":"tag-ssh"}
 
 function updateEndpointUI(){
@@ -907,6 +907,7 @@ $("btnRefreshEndpoints")?.addEventListener("click",()=>{renderEndpointList();app
 $("newEpType")?.addEventListener("change",function(){$("sshFields").style.display=this.value==="ssh"?"flex":"none"});
 $("btnAddEndpoint")?.addEventListener("click",()=>{
   const name=$("newEpName").value.trim(),type=$("newEpType").value,path=$("newEpPath").value.trim();
+  if(type==="ssh"){showConfirm("提示","SSH 远程端暂待开发：DSH 目前不能安全地直接暴露到公网，本版本不提供远程端点。",()=>{});return}
   if(!name||!path){showConfirm("提示","请填写端名称和 DSH 路径。",()=>{});return}
   endpoints.push({id:"ep-"+Date.now(),name,type,path,port:+$("newEpPort").value||7602,
     workspace:$("newEpWorkspace").value.trim(),dshHome:"~/.config/dsh-desktop/harness",

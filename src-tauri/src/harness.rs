@@ -140,6 +140,9 @@ pub async fn start(
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+    if endpoint.as_ref().map(|e| e.etype == "ssh").unwrap_or(false) {
+        return Err("SSH 远程端点暂待开发".to_string());
+    }
     let is_wsl = endpoint.as_ref().map(|e| e.etype == "wsl").unwrap_or(false);
     let distro = endpoint.as_ref().and_then(|e| e.distro.clone()).filter(|d| !d.is_empty());
     let ep_path = endpoint.as_ref().map(|e| e.path.clone()).unwrap_or_default();
