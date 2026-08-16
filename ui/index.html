@@ -1255,11 +1255,34 @@ document.querySelectorAll(".action-grid button[data-open]").forEach(btn=>{
     if(HAS_TAURI)invoke("open_path",{path:btn.dataset.open,endpoint_id:currentEndpoint().id});
   };
 });
-$("btnExportConfig")?.addEventListener("click",()=>{
-  const scope=[$("expLauncher").checked&&"launcher",$("expDsh").checked&&"dsh",$("expEndpoints").checked&&"endpoints"].filter(Boolean).join("+");
-  appendLog(`[维护] 配置已导出（范围：${scope}）`,"log-ready");
+$("btnExportConfig")?.addEventListener("click",async()=>{
+  try{
+    const dsh=await invoke("get_dsh_settings");
+    const prefs={
+      kanban:localStorage.getItem(KANBAN_KEY),
+      endpoints:localStorage.getItem(EP_KEY),
+      drawer:localStorage.getItem(DRAWER_KEY)
+    };
+    const data=JSON.stringify({version:1,exportedAt:new Date().toISOString(),launcher_prefs:prefs,dsh_settings:dsh},null,2);
+    const p=await invoke("save_text_file",{defaultName:"dsh-desktop-config.json",content:data});
+    if(p)appendLog("[维护] 配置已导出："+p,"log-ready");
+  }catch(e){appendLog("导出失败："+e,"log-error")}
 });
-$("btnImportConfig")?.addEventListener("click",()=>showConfirm("导入配置","选择配置文件，将以合并方式导入（保留现有配置）。",()=>appendLog("[维护] 配置已导入","log-ready")));
+$("btnImportConfig")?.addEventListener("click",async()=>{
+  try{
+    const p=await invoke("pick_file",{filters:[{name:"JSON",extensions:["json"]}]});
+    if(!p)return;
+    const data=JSON.parse(await invoke("read_text_file",{path:p}));
+    if(data.launcher_prefs){
+      if(data.launcher_prefs.kanban)localStorage.setItem(KANBAN_KEY,data.launcher_prefs.kanban);
+      if(data.launcher_prefs.endpoints)localStorage.setItem(EP_KEY,data.launcher_prefs.endpoints);
+      if(data.launcher_prefs.drawer)localStorage.setItem(DRAWER_KEY,data.launcher_prefs.drawer);
+    }
+    if(data.dsh_settings!==undefined)await invoke("set_dsh_settings",{text:data.dsh_settings});
+    appendLog("[维护] 配置已导入，界面即将刷新","log-ready");
+    setTimeout(()=>location.reload(),600);
+  }catch(e){appendLog("导入失败："+e,"log-error")}
+});
 $("btnResetUI")?.addEventListener("click",()=>showConfirm("重置外观与偏好","确定要重置启动器外观与偏好设置吗？看板娘、窗口、启动行为将恢复默认。",()=>{kanbanCfg={...DEFAULT_KANBAN};saveKanban();applyKanban();appendLog("[维护] 外观与偏好已重置","log-stop")}));
 $("btnResetEndpoints")?.addEventListener("click",()=>showConfirm("重置多端列表","确定要重置多端列表吗？将恢复默认的本地 Windows 端，其他端从列表移除（不删除端上的数据）。",()=>{endpoints=JSON.parse(JSON.stringify(DEFAULT_ENDPOINTS));saveEndpoints();renderEndpointList();updateEndpointUI();appendLog("[维护] 多端列表已重置","log-stop")}));
 $("btnResetDsh")?.addEventListener("click",()=>showConfirm("重置当前端 DSH 配置",`确定要重置「${currentEndpoint().name}」的 DSH 插件/技能/MCP 配置吗？此操作需重启 DSH 生效。`,()=>appendLog("[维护] 当前端 DSH 配置已重置","log-stop")));

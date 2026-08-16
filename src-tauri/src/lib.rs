@@ -166,6 +166,32 @@ async fn pick_file(app: AppHandle, _filters: Option<serde_json::Value>) -> Resul
 }
 
 #[tauri::command]
+async fn save_text_file(
+    app: AppHandle,
+    default_name: String,
+    content: String,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let picked = app
+        .dialog()
+        .file()
+        .set_file_name(&default_name)
+        .blocking_save_file();
+    if let Some(fp) = picked {
+        if let Ok(path) = fp.into_path() {
+            std::fs::write(&path, content).map_err(|e| e.to_string())?;
+            return Ok(Some(path.to_string_lossy().into_owned()));
+        }
+    }
+    Ok(None)
+}
+
+#[tauri::command]
+fn read_text_file(path: String) -> Result<String, String> {
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn open_path(path: String) -> Result<(), String> {
     let home = default_dsh_home();
     let dir = match path.as_str() {
@@ -345,6 +371,8 @@ pub fn run() {
             set_workspace,
             pick_workspace,
             pick_file,
+            save_text_file,
+            read_text_file,
             open_path,
             list_sessions,
             get_session,
