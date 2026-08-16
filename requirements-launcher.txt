@@ -1,0 +1,3 @@
+# 托盘/控制台窗口模式所需（console 模式只需要标准库）
+pystray
+Pillow

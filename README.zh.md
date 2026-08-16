@@ -55,6 +55,11 @@ python launch.py
 
 可选参数：`--port 7602`（端口）、`--workspace <目录>`（默认工作区）、`--no-browser`（不自动开浏览器）。
 
+想要托盘和轻量控制台窗口（启动/停止、状态、日志都在托盘菜单和窗口里）：
+
+1. 安装托盘依赖（只需一次）：`pip install -r requirements-launcher.txt`
+2. 双击 **`启动 DSH 托盘.bat`**，之后可通过系统托盘图标随时启动/停止、打开界面或退出。
+
 > 提示：会话记忆/设置存放在 `%APPDATA%\dsh-desktop\harness`，卸载或重装程序都不会影响它。
 
 ## 加入社区

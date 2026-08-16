@@ -59,6 +59,11 @@ The script reuses `%APPDATA%\dsh-desktop\harness` as the data directory (session
 
 Optional flags: `--port 7602`, `--workspace <dir>`, `--no-browser`.
 
+For a system tray icon and a small control window (start/stop, status and logs):
+
+1. Install the tray dependencies once: `pip install -r requirements-launcher.txt`
+2. Double-click **`启动 DSH 托盘.bat`**; the tray icon lets you start/stop, open the UI or quit anytime.
+
 > Note: sessions/settings live in `%APPDATA%\dsh-desktop\harness` and survive uninstalls or reinstallation.
 
 ## Community

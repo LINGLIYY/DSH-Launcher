@@ -174,7 +174,25 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="端口（默认 7602）")
     parser.add_argument("--workspace", default=str(SCRIPT_DIR), help="默认工作区目录（默认脚本所在目录）")
     parser.add_argument("--no-browser", action="store_true", help="启动后不自动打开浏览器")
+    parser.add_argument(
+        "--tray",
+        action="store_true",
+        help="以托盘 + 控制台窗口模式运行（需要 pystray，见 requirements-launcher.txt）",
+    )
     args = parser.parse_args()
+
+    if args.tray:
+        import launcher_tray
+
+        return launcher_tray.run_tray(
+            args,
+            {
+                "find_dsh": find_dsh,
+                "http_ready": http_ready,
+                "kill_tree": kill_tree,
+                "default_dsh_home": default_dsh_home,
+            },
+        )
 
     url = f"http://{args.host}:{args.port}/"
     workspace = os.path.abspath(args.workspace)
