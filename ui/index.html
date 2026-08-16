@@ -376,6 +376,7 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
         </div>
         <div class="setting-item">
           <div class="si-label"><span>DSH 启动后自动打开浏览器</span><div class="switch" id="swAutoBrowser"></div></div>
+          <div class="si-desc">开启后，DSH 就绪时自动用默认浏览器打开其网页；关闭则只启动服务，不自动打开。</div>
         </div>
         <div class="setting-item">
           <div class="si-label"><span>端口占用策略</span></div>
@@ -622,6 +623,7 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
     <div class="addr-bar">
       <span class="path-text" id="workspacePath">工作区：D:\RJian\AIProjects\Projects\dsh-desktop</span>
       <span class="link-url" id="openUrlLink">http://127.0.0.1:7602/</span>
+      <button class="btn-small" id="btnOpenBrowserTop" style="flex:none">打开浏览器</button>
     </div>
   </div>
 
@@ -1194,6 +1196,7 @@ $("btnStop").onclick=async function(){
 $("clearLog").onclick=()=>{$("logContent").innerHTML="";logLines=0;$("logLineCount").textContent="0"};
 $("openUrlLink").onclick=()=>invoke("open_browser",{endpoint_id:currentEndpoint().id});
 $("btnOpenBrowser").onclick=()=>invoke("open_browser",{endpoint_id:currentEndpoint().id});
+$("btnOpenBrowserTop").onclick=()=>invoke("open_browser",{endpoint_id:currentEndpoint().id});
 $("btnOpenLogDir").onclick=()=>invoke("open_logs_dir");
 $("btnOpenLogDir2").onclick=()=>invoke("open_logs_dir");
 async function copyToClipboard(text,label){
