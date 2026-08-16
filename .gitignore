@@ -8,3 +8,5 @@ downloads/
 .tmp-upstream-dsh/
 一些内容反馈/
 *.log
+__pycache__/
+*.pyc
