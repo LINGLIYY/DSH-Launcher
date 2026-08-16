@@ -701,8 +701,7 @@ const PROTO_CMDS = new Set([
   "get_usage_stats","get_usage_limits","set_usage_limits",
   "get_dsh_settings","set_dsh_settings",
   "export_config","import_config","reset_config",
-  "list_endpoints","add_endpoint","update_endpoint","remove_endpoint","set_active_endpoint",
-  "ping_endpoint"
+  "list_endpoints","add_endpoint","update_endpoint","remove_endpoint","set_active_endpoint"
 ]);
 async function invoke(cmd, args){
   if(HAS_TAURI && !PROTO_CMDS.has(cmd)) return window.__TAURI__.core.invoke(cmd, args);
@@ -822,9 +821,11 @@ function renderEndpointList(){
       const id=btn.dataset.id,act=btn.dataset.act,e=endpoints.find(x=>x.id===id);
       if(act==="activate"){setActiveEndpoint(id);renderEndpointList()}
       else if(act==="edit"){showConfirm("编辑端",`编辑「${e.name}」配置（原型）。\n实际实现将弹出表单修改名称、路径、端口等。`,()=>{})}
-      else if(act==="ping"){appendLog(`[多端] 检测 ${e.name} 连通性...`,"log-start");setTimeout(()=>{
-        const ok=Math.random()>0.3;e.status=ok?"stopped":"error";saveEndpoints();renderEndpointList();updateEndpointUI();
-        appendLog(`[多端] ${e.name} ${ok?"可达":"不可达"}`,ok?"log-ready":"log-error");},600)}
+      else if(act==="ping"){appendLog(`[多端] 检测 ${e.name} 连通性...`,"log-start");
+        invoke("ping_endpoint",{endpoint:e}).then(status=>{
+          e.status=status||"unknown";saveEndpoints();renderEndpointList();updateEndpointUI();
+          appendLog(`[多端] ${e.name} ${status==="error"?"不可达":status==="running"?"运行中":"可达"}`,"log-ready");
+        }).catch(()=>{e.status="error";saveEndpoints();renderEndpointList();appendLog(`[多端] ${e.name} 检测失败`,"log-error")})}
       else if(act==="remove"){showConfirm("删除端",`确定要删除端「${e.name}」吗？该端的会话与配置不会被删除，仅从管理列表移除。`,()=>{
         endpoints=endpoints.filter(x=>x.id!==id);if(e.active&&endpoints.length)endpoints[0].active=true;saveEndpoints();renderEndpointList();updateEndpointUI();
       })}

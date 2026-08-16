@@ -118,6 +118,41 @@ pub fn scan_wsl() -> Vec<WslInfo> {
     out
 }
 
+pub fn ping(endpoint: &serde_json::Value) -> String {
+    let etype = endpoint
+        .get("type")
+        .and_then(|x| x.as_str())
+        .unwrap_or("windows");
+    match etype {
+        "wsl" => {
+            let Some(distro) = endpoint.get("distro").and_then(|x| x.as_str()) else {
+                return "error".to_string();
+            };
+            if distro.is_empty() {
+                return "error".to_string();
+            }
+            let ok = std::process::Command::new("wsl")
+                .args(["-d", distro, "--", "true"])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if ok { "stopped".to_string() } else { "error".to_string() }
+        }
+        "ssh" => "unknown".to_string(),
+        _ => {
+            let port = endpoint
+                .get("port")
+                .and_then(|x| x.as_u64())
+                .unwrap_or(7602) as u16;
+            if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+                "running".to_string()
+            } else {
+                "stopped".to_string()
+            }
+        }
+    }
+}
+
 fn dsh_home() -> PathBuf {
     let base = std::env::var("APPDATA").unwrap_or_else(|_| "C:\\".to_string());
     PathBuf::from(base)

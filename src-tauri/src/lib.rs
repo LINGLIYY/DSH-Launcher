@@ -200,6 +200,11 @@ fn scan_wsl() -> Vec<capabilities::WslInfo> {
 }
 
 #[tauri::command]
+fn ping_endpoint(endpoint: serde_json::Value) -> String {
+    capabilities::ping(&endpoint)
+}
+
+#[tauri::command]
 fn get_session(id: String) -> Result<Vec<sessions::Block>, String> {
     sessions::render_by_id(&id)
 }
@@ -331,6 +336,7 @@ pub fn run() {
             list_skills,
             list_mcp,
             scan_wsl,
+            ping_endpoint,
         ])
         .run(tauri::generate_context!())
         .expect("error while running DSH Desktop");
