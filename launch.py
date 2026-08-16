@@ -81,41 +81,46 @@ def set_console_icon(ico_path: Path) -> None:
     """给控制台窗口设置自定义图标（保留 DSH Desktop 图标设计）。"""
     if os.name != "nt" or not ico_path.exists():
         return
-    import ctypes
-    from ctypes import wintypes
+    try:
+        import ctypes
+        from ctypes import wintypes
 
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    user32 = ctypes.WinDLL("user32", use_last_error=True)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
 
-    kernel32.GetConsoleWindow.restype = wintypes.HWND
-    hwnd = kernel32.GetConsoleWindow()
-    if not hwnd:
-        return
+        kernel32.GetConsoleWindow.restype = wintypes.HWND
+        hwnd = kernel32.GetConsoleWindow()
+        if not hwnd:
+            return
 
-    user32.LoadImageW.restype = wintypes.HANDLE
-    user32.LoadImageW.argtypes = [
-        wintypes.HINSTANCE,
-        wintypes.LPCWSTR,
-        wintypes.UINT,
-        ctypes.c_int,
-        ctypes.c_int,
-        wintypes.UINT,
-    ]
-    user32.SendMessageW.restype = wintypes.LRESULT
-    user32.SendMessageW.argtypes = [
-        wintypes.HWND,
-        wintypes.UINT,
-        wintypes.WPARAM,
-        wintypes.LPARAM,
-    ]
+        user32.LoadImageW.restype = wintypes.HANDLE
+        user32.LoadImageW.argtypes = [
+            wintypes.HINSTANCE,
+            wintypes.LPCWSTR,
+            wintypes.UINT,
+            ctypes.c_int,
+            ctypes.c_int,
+            wintypes.UINT,
+        ]
+        LRESULT = ctypes.c_ssize_t  # wintypes.LRESULT 在部分 Python 构建中缺失
+        user32.SendMessageW.restype = LRESULT
+        user32.SendMessageW.argtypes = [
+            wintypes.HWND,
+            wintypes.UINT,
+            wintypes.WPARAM,
+            wintypes.LPARAM,
+        ]
 
-    IMAGE_ICON = 1
-    LR_LOADFROMFILE = 0x00000010
-    WM_SETICON = 0x0080
-    hicon = user32.LoadImageW(None, str(ico_path), IMAGE_ICON, 0, 0, LR_LOADFROMFILE)
-    if hicon:
-        user32.SendMessageW(hwnd, WM_SETICON, 0, hicon)  # 小图标
-        user32.SendMessageW(hwnd, WM_SETICON, 1, hicon)  # 大图标
+        IMAGE_ICON = 1
+        LR_LOADFROMFILE = 0x00000010
+        WM_SETICON = 0x0080
+        hicon = user32.LoadImageW(None, str(ico_path), IMAGE_ICON, 0, 0, LR_LOADFROMFILE)
+        if hicon:
+            user32.SendMessageW(hwnd, WM_SETICON, 0, hicon)  # 小图标
+            user32.SendMessageW(hwnd, WM_SETICON, 1, hicon)  # 大图标
+    except Exception:
+        # 控制台图标是纯装饰，失败不影响启动
+        pass
 
 
 def find_dsh() -> str:
