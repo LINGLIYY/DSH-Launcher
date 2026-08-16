@@ -15,7 +15,7 @@
 }
 *{margin:0;padding:0;box-sizing:border-box;font-family:"Microsoft YaHei",system-ui,sans-serif}
 html,body{height:100%}
-body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:100vh}
+body{background:var(--bg-window);overflow:hidden;position:relative;height:100vh}
 
 /* ===== 看板娘 ===== */
 .kanban-overlay{position:fixed;right:24px;bottom:var(--kanban-bottom);width:var(--kanban-width);
@@ -28,7 +28,7 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
 /* ===== 主窗口 ===== */
 .window-container{max-width:960px;margin:0 auto;border:1px solid var(--border-color);
   border-radius:8px;overflow:hidden;background:rgba(246,249,252,.96);
-  position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column}
+  position:relative;z-index:1;height:100vh;display:flex;flex-direction:column}
 
 .win-header{display:flex;justify-content:space-between;align-items:center;
   padding:12px var(--safe-padding);border-bottom:1px solid var(--border-color);background:rgba(246,249,252,.92)}
@@ -100,7 +100,7 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
 
 .log-wrap{display:flex;flex-direction:column;margin-top:var(--gap-block);padding:0 var(--safe-padding);flex:1;min-height:0}
 .log-box{flex:1;border:1px solid var(--border-color);background:var(--card-bg);padding:8px;
-  overflow-y:auto;white-space:pre-wrap;font-family:Consolas,monospace;font-size:12px;line-height:1.6;min-height:200px}
+  overflow-y:auto;white-space:pre-wrap;font-family:Consolas,monospace;font-size:12px;line-height:1.6;min-height:0}
 .log-footer{display:flex;justify-content:flex-end;gap:16px;padding:6px 4px;color:var(--text-secondary);font-size:12px}
 .log-clear{cursor:pointer}
 .log-ready{color:var(--success-green)}
@@ -111,14 +111,14 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
 /* ===== 会话管理 ===== */
 .session-layout{display:flex;gap:12px;flex:1;min-height:0;padding:0 var(--safe-padding);margin-top:var(--gap-block)}
 .session-list{width:280px;border:1px solid var(--border-color);background:var(--card-bg);
-  border-radius:4px;overflow-y:auto;max-height:520px}
+  border-radius:4px;overflow-y:auto;min-height:0}
 .session-item{padding:10px 12px;border-bottom:1px solid var(--border-color);cursor:pointer}
 .session-item:hover{background:#f0f5fb}
 .session-item.active{background:#e8f0fa;border-left:3px solid var(--primary-blue)}
 .session-item .s-title{font-size:13px;color:var(--text-main);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .session-item .s-meta{font-size:11px;color:var(--text-secondary);margin-top:3px}
 .session-detail{flex:1;border:1px solid var(--border-color);background:var(--card-bg);
-  border-radius:4px;padding:14px;overflow-y:auto;max-height:520px}
+  border-radius:4px;padding:14px;overflow-y:auto;min-height:0}
 .session-detail .msg{margin-bottom:10px;padding:8px 10px;border-radius:4px;font-size:13px;line-height:1.6}
 .session-detail .msg.user{background:#e8f0fa;border-left:3px solid var(--primary-blue)}
 .session-detail .msg.assistant{background:#f5f7fa;border-left:3px solid #999}
