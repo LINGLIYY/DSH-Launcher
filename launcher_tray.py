@@ -241,6 +241,16 @@ def _setup_styles(root):
     style.map("Treeview", background=[("selected", ELEVATED)], foreground=[("selected", FG)])
 
 
+def _file_log(log_path, msg):
+    """直接写日志文件（pystray 线程/早期阶段用，pythonw 无控制台）。"""
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+    except OSError:
+        pass
+
+
 class SessionsPanel:
     """会话管理页：按工作区分组浏览、搜索、查看内容、删除（移入备份）。"""
 
@@ -709,8 +719,26 @@ class TrayIcon:
         )
         self.icon = pystray.Icon("dsh-desktop", image, APP_NAME, menu)
 
-    def run_detached(self):
-        self.icon.run_detached()
+    def run(self):
+        """在主线程运行托盘消息循环；异常写日志（pythonw 无控制台，不能静默）。"""
+        import threading
+
+        _file_log(self.mgr.log_path, f"托盘线程启动: {threading.current_thread().name}")
+
+        def probe():
+            time.sleep(3)
+            _file_log(
+                self.mgr.log_path,
+                f"托盘状态探针: running={getattr(self.icon, '_running', None)} visible={getattr(self.icon, 'visible', None)}",
+            )
+
+        threading.Thread(target=probe, daemon=True).start()
+        try:
+            self.icon.visible = True
+            self.icon.run()
+            _file_log(self.mgr.log_path, "托盘消息循环已退出")
+        except Exception as exc:
+            _file_log(self.mgr.log_path, f"托盘异常: {exc!r}")
 
     def stop(self):
         try:
@@ -720,7 +748,7 @@ class TrayIcon:
 
 
 def run_tray(args, helpers):
-    """--tray 入口：托盘 + 控制台窗口 + 会话管理，自动启动 Harness。"""
+    """--tray 入口：托盘（主线程）+ 控制台窗口（子线程），自动启动 Harness。"""
     import session_store
 
     dsh_home = helpers["default_dsh_home"]()
@@ -741,23 +769,43 @@ def run_tray(args, helpers):
         log_path,
         notify=lambda kind: ui_q.put(("event", kind)),
     )
-    window = ControlWindow(mgr, ui_q, sessions_root=sessions_root, trash_root=trash_root)
-
-    tray = TrayIcon(mgr, window)
-    window.tray = tray
+    tray_holder = {}
+    window_ready = threading.Event()
 
     mgr._log(f"DSH Desktop 托盘已启动（数据目录 {dsh_home}）")
     mgr._log(f"使用 {dsh}")
     mgr._log(f"会话目录 {sessions_root}（备份目录 {trash_root}）")
-    window.auto_open = not args.no_browser
 
-    tray.run_detached()
-    window.root.after(300, lambda: threading.Thread(target=mgr.start, args=(args.workspace,), daemon=True).start())
-    window.show()
+    def tk_thread():
+        try:
+            window = ControlWindow(mgr, ui_q, sessions_root=sessions_root, trash_root=trash_root)
+            tray_holder["window"] = window
+            window.auto_open = not args.no_browser
+            window.root.after(
+                300,
+                lambda: threading.Thread(target=mgr.start, args=(args.workspace,), daemon=True).start(),
+            )
+            window.show()
+            window_ready.set()
+            window.root.mainloop()
+        except Exception as exc:
+            _file_log(log_path, f"控制台窗口异常: {exc!r}")
+            window_ready.set()
+        finally:
+            try:
+                threading.Thread(target=mgr.stop, daemon=True).start()
+            except Exception:
+                pass
 
-    try:
-        window.root.mainloop()
-    finally:
-        threading.Thread(target=mgr.stop, daemon=True).start()
-        tray.stop()
+    threading.Thread(target=tk_thread, daemon=True).start()
+    window_ready.wait(timeout=30)
+    window = tray_holder.get("window")
+    if window is None:
+        _file_log(log_path, "控制台窗口创建失败，退出托盘模式")
+        return 1
+
+    tray = TrayIcon(mgr, window)
+    window.tray = tray
+    tray_holder["icon"] = tray
+    tray.run()
     return 0
