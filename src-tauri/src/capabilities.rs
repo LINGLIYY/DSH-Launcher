@@ -36,6 +36,88 @@ pub struct McpInfo {
     pub url: String,
 }
 
+#[derive(Serialize)]
+pub struct WslInfo {
+    pub name: String,
+    pub distro: String,
+    pub path: String,
+    pub version: String,
+    pub state: String,
+}
+
+fn wsl_dsh_path(distro: &str) -> String {
+    let out = std::process::Command::new("wsl")
+        .args([
+            "-d",
+            distro,
+            "--",
+            "bash",
+            "-lc",
+            "command -v dsh 2>/dev/null || command -v dsh.cmd 2>/dev/null",
+        ])
+        .output();
+    match out {
+        Ok(o) if o.status.success() => decode_wsl(&o.stdout)
+            .lines()
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_string(),
+        _ => String::new(),
+    }
+}
+
+fn decode_wsl(bytes: &[u8]) -> String {
+    let nul_count = bytes.iter().filter(|&&b| b == 0).count();
+    if nul_count > bytes.len() / 3 {
+        let units: Vec<u16> = bytes
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
+        String::from_utf16_lossy(&units)
+    } else {
+        String::from_utf8_lossy(bytes).into_owned()
+    }
+}
+
+pub fn scan_wsl() -> Vec<WslInfo> {
+    let mut out = Vec::new();
+    let Ok(proc) = std::process::Command::new("wsl").args(["-l", "-v"]).output() else {
+        return out;
+    };
+    if !proc.status.success() {
+        return out;
+    }
+    let text = decode_wsl(&proc.stdout);
+    for line in text.lines().skip(1) {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        let (distro, state, version) = if parts.first() == Some(&"*") {
+            let d = parts.get(1).unwrap_or(&"").to_string();
+            let s = parts.get(2).unwrap_or(&"").to_string();
+            let v = parts.get(3).unwrap_or(&"").to_string();
+            (d, s, v)
+        } else {
+            (
+                parts.first().unwrap_or(&"").to_string(),
+                parts.get(1).unwrap_or(&"").to_string(),
+                parts.get(2).unwrap_or(&"").to_string(),
+            )
+        };
+        if distro.is_empty() || distro.eq_ignore_ascii_case("NAME") {
+            continue;
+        }
+        let path = wsl_dsh_path(&distro);
+        out.push(WslInfo {
+            name: distro.clone(),
+            distro,
+            path,
+            version,
+            state,
+        });
+    }
+    out
+}
+
 fn dsh_home() -> PathBuf {
     let base = std::env::var("APPDATA").unwrap_or_else(|_| "C:\\".to_string());
     PathBuf::from(base)

@@ -195,6 +195,11 @@ fn list_mcp() -> Vec<capabilities::McpInfo> {
 }
 
 #[tauri::command]
+fn scan_wsl() -> Vec<capabilities::WslInfo> {
+    capabilities::scan_wsl()
+}
+
+#[tauri::command]
 fn get_session(id: String) -> Result<Vec<sessions::Block>, String> {
     sessions::render_by_id(&id)
 }
@@ -325,6 +330,7 @@ pub fn run() {
             list_plugins,
             list_skills,
             list_mcp,
+            scan_wsl,
         ])
         .run(tauri::generate_context!())
         .expect("error while running DSH Desktop");

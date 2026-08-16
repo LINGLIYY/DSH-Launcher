@@ -702,7 +702,7 @@ const PROTO_CMDS = new Set([
   "get_dsh_settings","set_dsh_settings",
   "export_config","import_config","reset_config",
   "list_endpoints","add_endpoint","update_endpoint","remove_endpoint","set_active_endpoint",
-  "scan_wsl","ping_endpoint"
+  "ping_endpoint"
 ]);
 async function invoke(cmd, args){
   if(HAS_TAURI && !PROTO_CMDS.has(cmd)) return window.__TAURI__.core.invoke(cmd, args);
@@ -833,7 +833,6 @@ function renderEndpointList(){
 }
 
 $("btnScanEndpoints")?.addEventListener("click",async()=>{
-  if(HAS_TAURI){appendLog("[多端] WSL 自动扫描待接入（后端未实现）","log-stop");return}
   appendLog("[多端] 正在扫描 WSL 子系统中的 DSH...","log-start");
   const found=await invoke("scan_wsl");
   let added=0;
