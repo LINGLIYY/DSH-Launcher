@@ -256,7 +256,7 @@ body{background:var(--bg-window);overflow:hidden;position:relative;height:100vh}
 .market-box .mb-toolbar select{padding:6px 8px;border:1px solid var(--border-color);border-radius:3px;font-size:12px;max-width:180px}
 .market-box .mb-body{flex:1;overflow-y:auto;overflow-x:hidden;padding:12px 16px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-content:start;min-width:0}
 .market-empty{grid-column:1/-1;text-align:center;padding:24px 12px;color:var(--text-secondary);font-size:12px}
-.market-card{border:1px solid var(--border-color);border-radius:6px;padding:10px;background:#fff;min-width:0;overflow:hidden}
+.market-card{border:1px solid var(--border-color);border-radius:6px;padding:10px;background:#fff;min-width:0}
 .market-card .mc-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
 .market-card .mc-title{display:flex;align-items:center;gap:8px;min-width:0}
 .market-card .mc-avatar{width:34px;height:34px;border-radius:50%;background:#eaf3ff;color:#2b6cb0;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:14px;flex:none;overflow:hidden}
@@ -1445,6 +1445,18 @@ function marketCategoryZh(m){
   const c=marketCategories[m.category];
   return c?(c.zh||c.en||m.category):(m.category||"");
 }
+function deferRenderMarket(){
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    if($("marketModal")&&$("marketModal").classList.contains("show"))renderMarket();
+  }));
+}
+let marketResizeTimer=null;
+const marketObserver=new ResizeObserver(()=>{
+  clearTimeout(marketResizeTimer);
+  marketResizeTimer=setTimeout(()=>{
+    if($("marketModal")&&$("marketModal").classList.contains("show"))renderMarket();
+  },150);
+});
 function renderMarket(){
   const kw=($("marketSearch")?.value||"").toLowerCase();
   const cat=$("marketCategory")?.value||"";
@@ -1473,7 +1485,9 @@ function renderMarket(){
   body.innerHTML="";
   list.forEach(m=>{
     const isInst=m.installed||installed.has((m.name||"").toLowerCase())||(m.npm&&installed.has(m.npm.toLowerCase()));
-    const desc=marketDesc(m);
+    const dispName=m.name||m.id||"未命名插件";
+    const dispOwner=m.owner||"未知";
+    const desc=marketDesc(m)||"（暂无说明）";
     const catZh=marketCategoryZh(m);
     const initial=(m.owner||"?").trim().charAt(0).toUpperCase();
     const avatar='https://github.com/'+encodeURIComponent(m.owner||'')+'.png';
@@ -1482,7 +1496,7 @@ function renderMarket(){
       <div class="mc-head">
         <div class="mc-title">
           <div class="mc-avatar"><img src="${escapeHtml(avatar)}" loading="lazy" alt="" onerror="this.parentNode.textContent='${escapeHtml(initial)}'"></div>
-          <span class="mc-name" title="${escapeHtml(m.name)}">${escapeHtml(m.name)}</span>
+          <span class="mc-name" title="${escapeHtml(dispName)}">${escapeHtml(dispName)}</span>
         </div>
         <div style="display:flex;gap:6px;flex:none">
           ${m.url?`<button class="btn-small" style="padding:4px 8px;font-size:11px" data-act="open" data-url="${escapeHtml(m.url)}">主页</button>`:""}
@@ -1490,7 +1504,7 @@ function renderMarket(){
         </div>
       </div>
       <div class="mc-desc">${escapeHtml(desc)}</div>
-      <div class="mc-meta">作者：${escapeHtml(m.owner)}${catZh?` · ${escapeHtml(catZh)}`:""}${m.stars?` · ★ ${m.stars}`:""}${m.npm?` · npm: ${escapeHtml(m.npm)}`:` · GitHub`}</div>`;
+      <div class="mc-meta">作者：${escapeHtml(dispOwner)}${catZh?` · ${escapeHtml(catZh)}`:""}${m.stars?` · ★ ${m.stars}`:""}${m.npm?` · npm: ${escapeHtml(m.npm)}`:` · GitHub`}</div>`;
     body.appendChild(card);
   });
   body.querySelectorAll("button[data-act]").forEach(b=>{
@@ -1532,7 +1546,7 @@ async function loadMarket(force){
     });
     sel.value=cur;
     appendLog(`[市场] 已获取 ${marketData.length} 个社区插件`,"log-ready");
-    renderMarket();
+    deferRenderMarket();
   }catch(err){
     body.innerHTML='<div class="market-empty">市场数据加载失败：'+escapeHtml(String(err))+'</div>';
     appendLog(`[市场] 加载失败：${err}`,"log-error");
@@ -1540,10 +1554,11 @@ async function loadMarket(force){
 }
 $("btnOpenMarket")?.addEventListener("click",async()=>{
   $("marketModal").classList.add("show");
+  marketObserver.observe($("marketModal"));
   if(!marketData.length)await loadMarket(false);
-  else renderMarket();
+  else deferRenderMarket();
 });
-$("marketClose").onclick=()=>$("marketModal").classList.remove("show");
+$("marketClose").onclick=()=>{marketObserver.disconnect();$("marketModal").classList.remove("show")};
 $("marketSearch")?.addEventListener("input",renderMarket);
 $("marketCategory")?.addEventListener("change",renderMarket);
 $("marketStatus")?.addEventListener("change",renderMarket);
