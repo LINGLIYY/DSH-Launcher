@@ -1,467 +1,1328 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DSH Desktop</title>
-    <style>
-        :root {
-            --bg-window: #f6f9fc;
-            --card-bg: #ffffff;
-            --primary-blue: #528ed8;
-            --text-main: #222831;
-            --text-secondary: #636e80;
-            --border-color: #dde4ef;
-            --success-green: #249457;
-            --warn-orange: #e08c26;
-            --error-red: #d64545;
-            --safe-padding: 16px;
-            --gap-block: 12px;
-            --kanban-width: 340px;
-            --kanban-opacity: 0.38;
-            --kanban-position: rb;
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DSH Desktop</title>
+<style>
+:root{
+  --bg-window:#f6f9fc;--card-bg:#ffffff;--primary-blue:#528ed8;
+  --text-main:#222831;--text-secondary:#636e80;--border-color:#dde4ef;
+  --success-green:#249457;--warn-orange:#e08c26;--error-red:#d64545;
+  --safe-padding:16px;--gap-block:12px;
+  --kanban-width:340px;--kanban-opacity:0.38;--kanban-bottom:24px;
+  --drawer-width:440px;
+}
+*{margin:0;padding:0;box-sizing:border-box;font-family:"Microsoft YaHei",system-ui,sans-serif}
+html,body{height:100%}
+body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:100vh}
 
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: "Microsoft YaHei", system-ui, sans-serif; }
-        html, body { height: 100%; }
-        body { background: var(--bg-window); overflow-x: hidden; position: relative; }
+/* ===== 看板娘 ===== */
+.kanban-overlay{position:fixed;right:24px;bottom:var(--kanban-bottom);width:var(--kanban-width);
+  height:auto;opacity:var(--kanban-opacity);pointer-events:none;z-index:10;
+  transition:opacity .2s,width .2s,left .2s,right .2s,bottom .2s}
+.kanban-overlay.lb{right:auto;left:24px}
+.kanban-overlay.hidden{display:none}
 
-        .kanban-overlay {
-            position: fixed; right: 24px; bottom: 24px; width: var(--kanban-width); height: auto;
-            opacity: var(--kanban-opacity); pointer-events: none; z-index: 10;
-            transition: opacity 0.2s, width 0.2s, left 0.2s, right 0.2s;
-        }
-        .kanban-overlay.lb { right: auto; left: 24px; }
+/* ===== 主窗口 ===== */
+.window-container{max-width:960px;margin:0 auto;border:1px solid var(--border-color);
+  border-radius:8px;overflow:hidden;background:rgba(246,249,252,.96);
+  position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column}
 
-        .window-container {
-            max-width: 960px; margin: 0 auto; border: 1px solid var(--border-color);
-            border-radius: 8px; overflow: hidden; background: rgba(246,249,252,0.96);
-            position: relative; z-index: 1; min-height: 100vh;
-            display: flex; flex-direction: column;
-        }
+.win-header{display:flex;justify-content:space-between;align-items:center;
+  padding:12px var(--safe-padding);border-bottom:1px solid var(--border-color);background:rgba(246,249,252,.92)}
+.win-header h1{font-size:20px;color:var(--text-main);font-weight:bold}
+.header-right{display:flex;gap:12px;align-items:center}
+/* 端切换器 */
+.endpoint-switcher{position:relative}
+.endpoint-btn{display:flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--border-color);
+  background:#fff;cursor:pointer;border-radius:4px;font-size:12px;color:var(--text-main);max-width:180px}
+.endpoint-btn:hover{border-color:var(--primary-blue)}
+.endpoint-btn .ep-dot{width:8px;height:8px;border-radius:50%;background:var(--success-green)}
+.endpoint-btn .ep-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.endpoint-dropdown{position:absolute;top:calc(100% + 4px);right:0;width:240px;background:#fff;
+  border:1px solid var(--border-color);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.1);
+  z-index:50;display:none}
+.endpoint-dropdown.show{display:block}
+.endpoint-dropdown .ep-item{padding:8px 12px;cursor:pointer;font-size:12px;display:flex;
+  justify-content:space-between;align-items:center;border-bottom:1px solid var(--border-color)}
+.endpoint-dropdown .ep-item:last-child{border-bottom:none}
+.endpoint-dropdown .ep-item:hover{background:#f0f5fb}
+.endpoint-dropdown .ep-item.active{background:#e8f0fa;color:var(--primary-blue);font-weight:600}
+.endpoint-dropdown .ep-item .ep-type{font-size:10px;padding:1px 5px;border-radius:3px;background:#f0f0f0;color:#666}
+.endpoint-dropdown .ep-manage{padding:8px 12px;text-align:center;color:var(--primary-blue);
+  cursor:pointer;font-size:12px;border-top:1px solid var(--border-color)}
+.endpoint-dropdown .ep-manage:hover{background:#f0f5fb}
 
-        .win-header {
-            display: flex; justify-content: space-between; align-items: center;
-            padding: 12px var(--safe-padding); border-bottom: 1px solid var(--border-color);
-            background: rgba(246,249,252,0.92);
-        }
-        .win-header h1 { font-size: 22px; color: var(--text-main); font-weight: bold; }
-        .header-right-group { display: flex; gap: 20px; align-items: center; }
-        .status-indicator { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); }
-        .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #999; }
-        .status-dot.running { background: var(--success-green); }
-        .status-dot.starting { background: var(--warn-orange); }
-        .status-dot.error { background: var(--error-red); }
+.status-indicator{display:flex;align-items:center;gap:6px;color:var(--text-secondary);font-size:13px}
+.status-dot{width:10px;height:10px;border-radius:50%;background:#999}
+.status-dot.running{background:var(--success-green)}
+.status-dot.starting{background:var(--warn-orange)}
+.status-dot.error{background:var(--error-red)}
+.btn-settings{padding:5px 14px;border:1px solid var(--border-color);background:#fff;
+  cursor:pointer;border-radius:4px;font-size:13px;color:var(--text-main)}
+.btn-settings:hover{border-color:var(--primary-blue);color:var(--primary-blue)}
 
-        .block { padding: 0 var(--safe-padding); margin-top: var(--gap-block); }
-        .addr-bar {
-            display: flex; justify-content: space-between; align-items: center; gap: 12px;
-            padding: 10px 14px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 4px;
-        }
-        .addr-bar .path-text { color: var(--text-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .addr-bar .link-url { color: var(--primary-blue); cursor: pointer; white-space: nowrap; }
+.block{padding:0 var(--safe-padding);margin-top:var(--gap-block)}
+.addr-bar{display:flex;justify-content:space-between;align-items:center;gap:12px;
+  padding:10px 14px;background:var(--card-bg);border:1px solid var(--border-color);border-radius:4px}
+.addr-bar .path-text{color:var(--text-main);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.addr-bar .link-url{color:var(--primary-blue);cursor:pointer;font-size:13px;white-space:nowrap}
 
-        .tab-group { display: flex; gap: 0; border-bottom: 1px solid var(--border-color); width: fit-content; }
-        .tab-btn { padding: 8px 18px; border: 1px solid var(--border-color); background: var(--card-bg); cursor: pointer; border-bottom: none; font-size: 14px; }
-        .tab-btn.active { background: var(--primary-blue); color: white; border-color: var(--primary-blue); }
+.tab-group{display:flex;gap:0;border-bottom:1px solid var(--border-color);width:fit-content}
+.tab-btn{padding:8px 18px;border:1px solid var(--border-color);background:var(--card-bg);
+  cursor:pointer;border-bottom:none;font-size:14px;color:var(--text-main)}
+.tab-btn.active{background:var(--primary-blue);color:#fff;border-color:var(--primary-blue)}
+.tab-content{display:none;flex:1;flex-direction:column;min-height:0}
+.tab-content.active{display:flex}
 
-        .control-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 4px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
-        .form-row { display: flex; align-items: center; gap: 10px; }
-        .form-row label { min-width: 90px; color: var(--text-secondary); }
-        .form-row input { flex: 1; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 3px; font-size: 14px; }
-        .btn-small { padding: 6px 12px; border: 1px solid var(--border-color); background: var(--card-bg); cursor: pointer; }
-        .btn-group { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
-        .btn-primary { background: var(--primary-blue); color: white; border: 1px solid var(--primary-blue); padding: 8px 18px; cursor: pointer; }
-        .btn-normal { padding: 8px 18px; border: 1px solid var(--primary-blue); background: white; color: var(--primary-blue); cursor: pointer; }
-        .btn-normal:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn-danger { padding: 8px 18px; border: 1px solid var(--error-red); background: white; color: var(--error-red); cursor: pointer; }
+/* ===== 控制台 ===== */
+.control-card{background:var(--card-bg);border:1px solid var(--border-color);border-radius:4px;
+  padding:16px;display:flex;flex-direction:column;gap:10px}
+.form-row{display:flex;align-items:center;gap:10px}
+.form-row label{min-width:88px;color:var(--text-secondary);font-size:13px}
+.form-row input{flex:1;padding:6px 8px;border:1px solid var(--border-color);border-radius:3px;font-size:13px}
+.btn-small{padding:5px 12px;border:1px solid var(--border-color);background:var(--card-bg);cursor:pointer;border-radius:3px;font-size:13px}
+.btn-small:hover{border-color:var(--primary-blue);color:var(--primary-blue)}
+.btn-group{display:flex;gap:8px;margin-top:4px;flex-wrap:wrap}
+.btn-primary{background:var(--primary-blue);color:#fff;border:1px solid var(--primary-blue);
+  padding:7px 16px;cursor:pointer;border-radius:4px;font-size:13px}
+.btn-primary:hover{opacity:.9}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed}
+.btn-normal{padding:7px 16px;border:1px solid var(--primary-blue);background:#fff;
+  color:var(--primary-blue);cursor:pointer;border-radius:4px;font-size:13px}
+.btn-normal:hover{background:#eef4fc}
+.btn-normal:disabled{opacity:.5;cursor:not-allowed}
+.btn-danger{padding:5px 12px;border:1px solid var(--error-red);background:#fff;
+  color:var(--error-red);cursor:pointer;border-radius:3px;font-size:13px}
+.btn-danger:hover{background:#fef0f0}
 
-        .log-wrap { display: flex; flex-direction: column; margin-top: var(--gap-block); padding: 0 var(--safe-padding); flex: 1; min-height: 220px; }
-        .log-box { flex: 1; border: 1px solid var(--border-color); background: var(--card-bg); padding: 8px; overflow-y: auto; white-space: pre-wrap; font-family: Consolas, monospace; font-size: 13px; line-height: 1.5; }
-        .log-footer { display: flex; justify-content: flex-end; gap: 16px; padding: 6px 4px; color: var(--text-secondary); }
-        .log-clear { cursor: pointer; }
-        .log-ready { color: var(--success-green); }
-        .log-start { color: var(--warn-orange); }
-        .log-stop { color: var(--text-secondary); }
-        .log-err { color: var(--error-red); }
-        .log-info { color: var(--text-main); }
+.log-wrap{display:flex;flex-direction:column;margin-top:var(--gap-block);padding:0 var(--safe-padding);flex:1;min-height:0}
+.log-box{flex:1;border:1px solid var(--border-color);background:var(--card-bg);padding:8px;
+  overflow-y:auto;white-space:pre-wrap;font-family:Consolas,monospace;font-size:12px;line-height:1.6;min-height:200px}
+.log-footer{display:flex;justify-content:flex-end;gap:16px;padding:6px 4px;color:var(--text-secondary);font-size:12px}
+.log-clear{cursor:pointer}
+.log-ready{color:var(--success-green)}
+.log-start{color:var(--warn-orange)}
+.log-stop{color:var(--text-secondary)}
+.log-error{color:var(--error-red)}
 
-        .setting-toggle { padding: 4px 12px; border: 1px solid var(--border-color); background: #fff; cursor: pointer; }
-        .setting-panel { position: fixed; top: 60px; right: 20px; width: 280px; background: #fff; border: 1px solid var(--border-color); border-radius: 6px; padding: 16px; z-index: 999; display: none; }
-        .setting-panel.show { display: block; }
-        .setting-panel h3 { margin-bottom: 14px; font-size: 15px; color: var(--text-main); }
-        .setting-item { margin-bottom: 12px; }
-        .setting-item label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 4px; }
-        .setting-item input[type="range"] { width: 100%; }
-        .setting-desc { font-size: 12px; color: #999; }
-        .setting-btn-row { display: flex; gap: 8px; margin-top: 16px; }
-        .setting-btn-row button { flex: 1; padding: 6px; cursor: pointer; }
-        .pos-btn.active { background: var(--primary-blue); color: white; border-color: var(--primary-blue); }
+/* ===== 会话管理 ===== */
+.session-layout{display:flex;gap:12px;flex:1;min-height:0;padding:0 var(--safe-padding);margin-top:var(--gap-block)}
+.session-list{width:280px;border:1px solid var(--border-color);background:var(--card-bg);
+  border-radius:4px;overflow-y:auto;max-height:520px}
+.session-item{padding:10px 12px;border-bottom:1px solid var(--border-color);cursor:pointer}
+.session-item:hover{background:#f0f5fb}
+.session-item.active{background:#e8f0fa;border-left:3px solid var(--primary-blue)}
+.session-item .s-title{font-size:13px;color:var(--text-main);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.session-item .s-meta{font-size:11px;color:var(--text-secondary);margin-top:3px}
+.session-detail{flex:1;border:1px solid var(--border-color);background:var(--card-bg);
+  border-radius:4px;padding:14px;overflow-y:auto;max-height:520px}
+.session-detail .msg{margin-bottom:10px;padding:8px 10px;border-radius:4px;font-size:13px;line-height:1.6}
+.session-detail .msg.user{background:#e8f0fa;border-left:3px solid var(--primary-blue)}
+.session-detail .msg.assistant{background:#f5f7fa;border-left:3px solid #999}
+.session-detail .msg.tool{background:#fff8e6;border-left:3px solid var(--warn-orange);font-family:Consolas,monospace;font-size:12px}
+.session-empty{color:var(--text-secondary);text-align:center;padding:40px;font-size:13px}
 
-        #sessionPanel { flex: 1; display: none; flex-direction: column; padding: 0 var(--safe-padding); margin-top: var(--gap-block); gap: var(--gap-block); }
-        #sessionPanel.active { display: flex; }
-        #consolePanel.active { display: block; }
-        #consolePanel { display: none; }
-        .session-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-        .session-toolbar input { flex: 1; min-width: 180px; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 3px; }
-        .session-body { flex: 1; display: flex; gap: 12px; min-height: 300px; }
-        .session-tree { width: 300px; min-width: 220px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 4px; overflow-y: auto; padding: 8px; }
-        .session-tree .ws-group { margin-bottom: 8px; }
-        .session-tree .ws-title { font-weight: bold; color: var(--text-main); padding: 4px 2px; font-size: 13px; }
-        .session-item { padding: 6px 8px; cursor: pointer; border-radius: 3px; color: var(--text-main); font-size: 13px; display: flex; flex-direction: column; gap: 2px; }
-        .session-item:hover { background: #eef4fb; }
-        .session-item.active { background: #e3edfb; }
-        .session-item .meta { color: var(--text-secondary); font-size: 11px; }
-        .session-detail { flex: 1; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 4px; padding: 16px; overflow-y: auto; font-size: 14px; line-height: 1.6; }
-        .detail-user { color: var(--primary-blue); margin-bottom: 12px; white-space: pre-wrap; }
-        .detail-assistant { color: var(--text-main); margin-bottom: 12px; white-space: pre-wrap; }
-        .detail-tool { color: #9a6a1a; margin-bottom: 8px; white-space: pre-wrap; font-family: Consolas, monospace; font-size: 13px; }
-        .detail-result { color: var(--text-secondary); margin-bottom: 10px; white-space: pre-wrap; font-size: 13px; }
-        .detail-info { color: var(--text-secondary); }
-    </style>
+/* ===== DSH 能力中心（主 Tab） ===== */
+.capability-wrap{flex:1;display:flex;flex-direction:column;padding:0 var(--safe-padding);margin-top:var(--gap-block);min-height:0}
+.cap-hint{font-size:11px;color:var(--text-secondary);background:#f0f5fb;padding:8px 10px;
+  border-radius:4px;margin-bottom:12px;line-height:1.5}
+.sub-tab-group{display:flex;gap:0;border-bottom:1px solid var(--border-color);margin-bottom:12px}
+.sub-tab-btn{padding:6px 14px;border:1px solid var(--border-color);background:#fff;cursor:pointer;
+  border-bottom:none;font-size:12px;color:var(--text-main)}
+.sub-tab-btn.active{background:var(--primary-blue);color:#fff;border-color:var(--primary-blue)}
+.sub-tab-content{display:none;flex:1;overflow-y:auto;min-height:0}
+.sub-tab-content.active{display:block}
+.cap-toolbar{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;align-items:center}
+.cap-toolbar input[type="text"]{flex:1;min-width:160px;padding:5px 8px;border:1px solid var(--border-color);border-radius:3px;font-size:12px}
+.cap-toolbar select{padding:5px 8px;border:1px solid var(--border-color);border-radius:3px;font-size:12px}
+.cap-toolbar label{font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:4px}
+
+/* 能力卡片 */
+.cap-card{background:#fff;border:1px solid var(--border-color);border-radius:4px;padding:10px 12px;margin-bottom:8px;cursor:pointer}
+.cap-card:hover{border-color:var(--primary-blue)}
+.cap-card .cc-head{display:flex;justify-content:space-between;align-items:center}
+.cap-card .cc-name{font-size:13px;font-weight:600;color:var(--text-main)}
+.cap-card .cc-ver{font-size:11px;color:var(--text-secondary);margin-left:6px}
+.cap-card .cc-tag{font-size:10px;padding:1px 6px;border-radius:3px;margin-left:6px}
+.tag-builtin{background:#e8f0fa;color:var(--primary-blue)}
+.tag-third{background:#f0f0f0;color:#666}
+.tag-wsl{background:#e6f7ed;color:var(--success-green)}
+.tag-ssh{background:#fff3e0;color:var(--warn-orange)}
+.cap-card .cc-desc{font-size:12px;color:var(--text-secondary);margin-top:4px;line-height:1.4}
+.cap-card .cc-meta{font-size:11px;color:var(--text-secondary);margin-top:4px}
+.cap-card .cc-actions{display:flex;gap:6px;margin-top:8px}
+.status-badge{font-size:11px;padding:1px 6px;border-radius:3px}
+.badge-on{background:#e6f7ed;color:var(--success-green)}
+.badge-off{background:#f0f0f0;color:#999}
+.badge-err{background:#fde8e8;color:var(--error-red)}
+.badge-unknown{background:#f0f0f0;color:#999}
+
+/* 详情内联展开 */
+.cap-detail{background:#fafcff;border:1px solid var(--primary-blue);border-radius:4px;padding:12px;margin-bottom:8px}
+.cap-detail h4{font-size:13px;color:var(--text-main);margin-bottom:8px}
+.cap-detail .detail-row{display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px dashed var(--border-color)}
+.cap-detail .detail-row span:first-child{color:var(--text-secondary)}
+.cap-detail .detail-actions{display:flex;gap:6px;margin-top:10px}
+
+/* ===== 设置遮罩 + 抽屉（可拖拽拉伸） ===== */
+.settings-mask{position:fixed;inset:0;background:rgba(0,0,0,.25);z-index:100;display:none;opacity:0;transition:opacity .2s}
+.settings-mask.show{display:block;opacity:1}
+.settings-drawer{position:fixed;top:0;right:0;width:var(--drawer-width);height:100%;background:var(--bg-window);
+  z-index:101;display:flex;flex-direction:column;transform:translateX(100%);transition:transform .25s ease;
+  box-shadow:-4px 0 20px rgba(0,0,0,.1)}
+.settings-drawer.show{transform:translateX(0)}
+/* 拖拽手柄 */
+.drag-handle{position:absolute;left:0;top:0;width:5px;height:100%;cursor:ew-resize;z-index:102;
+  background:transparent;transition:background .2s}
+.drag-handle:hover,.drag-handle.dragging{background:var(--primary-blue);opacity:.3}
+.settings-header{display:flex;justify-content:space-between;align-items:center;
+  padding:14px 16px 14px 20px;border-bottom:1px solid var(--border-color);background:#fff}
+.settings-header h2{font-size:16px;color:var(--text-main)}
+.settings-header .drawer-width-label{font-size:11px;color:var(--text-secondary);margin-right:auto;margin-left:12px}
+.settings-close{width:28px;height:28px;border:1px solid var(--border-color);background:#fff;
+  cursor:pointer;border-radius:4px;font-size:16px;line-height:1;color:var(--text-secondary)}
+.settings-close:hover{border-color:var(--error-red);color:var(--error-red)}
+.settings-body{flex:1;display:flex;overflow:hidden}
+.settings-nav{width:120px;border-right:1px solid var(--border-color);background:#fff;padding:8px 0;overflow-y:auto;flex-shrink:0}
+.settings-nav .nav-item{padding:10px 14px;font-size:13px;color:var(--text-secondary);cursor:pointer;
+  border-left:3px solid transparent}
+.settings-nav .nav-item:hover{background:#f0f5fb}
+.settings-nav .nav-item.active{background:#e8f0fa;border-left-color:var(--primary-blue);color:var(--primary-blue);font-weight:600}
+.settings-content{flex:1;overflow-y:auto;padding:16px;min-width:0}
+.settings-section{display:none}
+.settings-section.active{display:block}
+.settings-section h3{font-size:14px;color:var(--text-main);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border-color)}
+.settings-hint{font-size:11px;color:var(--text-secondary);background:#f0f5fb;padding:8px 10px;
+  border-radius:4px;margin-bottom:14px;line-height:1.5}
+
+/* 设置项通用 */
+.setting-item{margin-bottom:14px}
+.setting-item .si-label{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.setting-item .si-label span{font-size:13px;color:var(--text-main);font-weight:500}
+.setting-item .si-desc{font-size:11px;color:var(--text-secondary);line-height:1.4;margin-top:3px}
+.setting-item input[type="range"]{width:100%;margin-top:4px}
+.setting-item input[type="text"],.setting-item input[type="number"],.setting-item select{
+  width:100%;padding:5px 8px;border:1px solid var(--border-color);border-radius:3px;font-size:13px;margin-top:4px}
+.setting-item .range-val{font-size:12px;color:var(--primary-blue);font-weight:600}
+.switch{position:relative;width:38px;height:20px;background:#ccc;border-radius:10px;cursor:pointer;transition:background .2s;flex-shrink:0}
+.switch.on{background:var(--primary-blue)}
+.switch::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;
+  background:#fff;border-radius:50%;transition:left .2s}
+.switch.on::after{left:20px}
+
+/* 用量进度条 */
+.usage-item{margin-bottom:14px}
+.usage-item .ui-label{display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px}
+.usage-item .ui-label .val{color:var(--primary-blue);font-weight:600}
+.usage-bar{height:8px;background:#e8ecf1;border-radius:4px;overflow:hidden}
+.usage-bar .fill{height:100%;background:var(--primary-blue);border-radius:4px;transition:width .3s}
+.usage-bar .fill.warn{background:var(--warn-orange)}
+.usage-bar .fill.danger{background:var(--error-red)}
+
+/* 数据维护 */
+.action-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.action-grid button{padding:8px;border:1px solid var(--border-color);background:#fff;cursor:pointer;
+  border-radius:4px;font-size:12px;color:var(--text-main);text-align:left}
+.action-grid button:hover{border-color:var(--primary-blue);color:var(--primary-blue)}
+.reset-zone{margin-top:16px;padding:12px;border:1px solid var(--error-red);border-radius:4px;background:#fef5f5}
+.reset-zone h4{font-size:13px;color:var(--error-red);margin-bottom:8px}
+.reset-zone button{margin-right:6px;margin-bottom:6px}
+
+/* 多端管理 */
+.endpoint-card{background:#fff;border:1px solid var(--border-color);border-radius:4px;padding:12px;margin-bottom:8px}
+.endpoint-card.active{border-color:var(--primary-blue);background:#f7faff}
+.endpoint-card .ec-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.endpoint-card .ec-name{font-size:13px;font-weight:600;color:var(--text-main)}
+.endpoint-card .ec-type{font-size:10px;padding:2px 7px;border-radius:3px;margin-left:6px}
+.endpoint-card .ec-meta{font-size:11px;color:var(--text-secondary);line-height:1.6}
+.endpoint-card .ec-actions{display:flex;gap:6px;margin-top:8px}
+.endpoint-add-zone{margin-top:12px;padding:12px;border:1px dashed var(--border-color);border-radius:4px}
+.endpoint-add-zone h4{font-size:13px;color:var(--text-main);margin-bottom:8px}
+.endpoint-add-zone .form-row{margin-bottom:8px}
+.endpoint-add-zone .form-row label{min-width:70px;font-size:12px}
+
+/* 弹窗 */
+.market-modal{position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:200;display:none;
+  align-items:center;justify-content:center}
+.market-modal.show{display:flex}
+.market-box{width:520px;max-height:70vh;background:#fff;border-radius:8px;display:flex;flex-direction:column;overflow:hidden}
+.market-box .mb-head{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border-color)}
+.market-box .mb-head h3{font-size:15px}
+.market-box .mb-body{flex:1;overflow-y:auto;padding:12px 16px}
+.market-card{border:1px solid var(--border-color);border-radius:4px;padding:10px;margin-bottom:8px}
+.market-card .mc-head{display:flex;justify-content:space-between;align-items:center}
+.market-card .mc-name{font-size:13px;font-weight:600}
+.market-card .mc-desc{font-size:12px;color:var(--text-secondary);margin:4px 0}
+.market-card .mc-meta{font-size:11px;color:var(--text-secondary)}
+
+.confirm-modal{position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:300;display:none;
+  align-items:center;justify-content:center}
+.confirm-modal.show{display:flex}
+.confirm-box{width:340px;background:#fff;border-radius:8px;padding:20px}
+.confirm-box h4{font-size:15px;color:var(--text-main);margin-bottom:8px}
+.confirm-box p{font-size:13px;color:var(--text-secondary);margin-bottom:16px;line-height:1.5;white-space:pre-line}
+.confirm-box .cb-actions{display:flex;gap:8px;justify-content:flex-end}
+</style>
 </head>
 <body>
-    <img src="kanban-background.png" class="kanban-overlay" id="kanbanImg" alt="">
 
-    <div class="setting-panel" id="settingPanel">
-        <h3>看板娘设置</h3>
-        <div class="setting-item">
-            <label>显示尺寸 <span id="sizeValue">340px</span></label>
-            <input type="range" id="sizeSlider" min="120" max="460" value="340">
-            <div class="setting-desc">调整角色画面宽度</div>
-        </div>
-        <div class="setting-item">
-            <label>透明度 <span id="opacityValue">0.38</span></label>
-            <input type="range" id="opacitySlider" min="10" max="60" value="38">
-            <div class="setting-desc">数值越高画面越清晰</div>
-        </div>
-        <div class="setting-item">
-            <label>显示位置</label>
-            <div style="display:flex;gap:6px;">
-                <button class="btn-small pos-btn active" data-pos="rb">右下角</button>
-                <button class="btn-small pos-btn" data-pos="lb">左下角</button>
-            </div>
-        </div>
-        <div class="setting-btn-row">
-            <button class="btn-normal" id="resetSetting">恢复默认</button>
-            <button class="btn-primary" id="closeSetting">关闭</button>
-        </div>
+<!-- 看板娘 -->
+<img src="kanban-background.png" class="kanban-overlay" id="kanbanImg" alt="" onerror="this.style.display='none'">
+
+<!-- 设置遮罩 -->
+<div class="settings-mask" id="settingsMask"></div>
+
+<!-- 设置抽屉（可拖拽拉伸） -->
+<div class="settings-drawer" id="settingsDrawer">
+  <div class="drag-handle" id="dragHandle" title="拖拽调整宽度"></div>
+  <div class="settings-header">
+    <h2>设置</h2>
+    <span class="drawer-width-label" id="drawerWidthLabel">440px</span>
+    <button class="settings-close" id="settingsClose">&times;</button>
+  </div>
+  <div class="settings-body">
+    <div class="settings-nav" id="settingsNav">
+      <div class="nav-item active" data-sec="general">通用偏好</div>
+      <div class="nav-item" data-sec="endpoints">多端管理</div>
+      <div class="nav-item" data-sec="runtime">运行与用量</div>
+      <div class="nav-item" data-sec="maintenance">数据与维护</div>
     </div>
+    <div class="settings-content">
 
-    <div class="window-container">
-        <div class="win-header">
-            <h1>DSH Desktop</h1>
-            <div class="header-right-group">
-                <button class="setting-toggle" id="openSetting">设置</button>
-                <div class="status-indicator">
-                    <span class="status-dot" id="statusDot"></span>
-                    <span id="statusText">已停止</span>
-                </div>
-            </div>
+      <!-- ===== 通用偏好 ===== -->
+      <div class="settings-section active" data-sec="general">
+        <h3>外观与看板娘</h3>
+        <div class="setting-item">
+          <div class="si-label"><span>启用看板娘背景</span><div class="switch on" id="swKanban"></div></div>
+          <div class="si-desc">启动器界面装饰组件，不属于 DSH 插件体系。关闭后不再渲染图片。</div>
+        </div>
+        <div class="setting-item">
+          <div class="si-label"><span>显示尺寸</span><span class="range-val" id="kanbanSizeVal">340px</span></div>
+          <input type="range" id="kanbanSize" min="120" max="480" value="340">
+          <div class="si-desc">调整角色画面宽度，尺寸过大易遮挡操作区。</div>
+        </div>
+        <div class="setting-item">
+          <div class="si-label"><span>透明度</span><span class="range-val" id="kanbanOpacityVal">0.38</span></div>
+          <input type="range" id="kanbanOpacity" min="10" max="60" value="38">
+          <div class="si-desc">数值越高画面越清晰，过高会干扰文字阅读。</div>
+        </div>
+        <div class="setting-item">
+          <div class="si-label"><span>停靠位置</span></div>
+          <select id="kanbanPosition">
+            <option value="rb">右下角</option>
+            <option value="lb">左下角</option>
+          </select>
+          <div class="si-desc">选择看板娘在窗口中的停靠边角。</div>
+        </div>
+        <div class="setting-item">
+          <div class="si-label"><span>智能避让</span><div class="switch" id="swKanbanAvoid"></div></div>
+          <div class="si-desc">开启后看板娘自动向下偏移，避开日志区域底部。</div>
+        </div>
+        <div class="setting-item">
+          <div class="si-label"><span>自定义图片</span></div>
+          <div style="display:flex;gap:6px;margin-top:4px">
+            <button class="btn-small" id="btnKanbanPick">选择图片</button>
+            <button class="btn-small" id="btnKanbanReset">恢复默认</button>
+          </div>
+          <div class="si-desc">支持 PNG/JPG，建议使用透明背景素材。</div>
         </div>
 
-        <div class="block">
-            <div class="addr-bar">
-                <span class="path-text" id="pathText">工作区：</span>
-                <span class="link-url" id="urlLink">http://127.0.0.1:7602/</span>
-            </div>
+        <h3 style="margin-top:20px">窗口与托盘</h3>
+        <div class="setting-item">
+          <div class="si-label"><span>关闭窗口行为</span></div>
+          <select id="closeBehavior">
+            <option value="tray">最小化到托盘</option>
+            <option value="quit">直接退出程序</option>
+          </select>
+        </div>
+        <div class="setting-item">
+          <div class="si-label"><span>单实例锁定</span><div class="switch on" id="swSingleInstance"></div></div>
+          <div class="si-desc">重复打开仅唤起现有窗口，不会启动多个实例。</div>
+        </div>
+        <div class="setting-item">
+          <div class="si-label"><span>记住窗口位置与大小</span><div class="switch on" id="swRememberWin"></div></div>
+        </div>
+        <div class="setting-item">
+          <div class="si-label"><span>开机自启动</span><div class="switch" id="swAutoStart"></div></div>
         </div>
 
-        <div class="block">
-            <div class="tab-group">
-                <button class="tab-btn active" data-tab="console">控制台</button>
-                <button class="tab-btn" data-tab="session">会话管理</button>
-            </div>
+        <h3 style="margin-top:20px">启动行为</h3>
+        <div class="setting-item">
+          <div class="si-label"><span>启动器打开时</span></div>
+          <select id="launchBehavior">
+            <option value="manual">手动启动 DSH</option>
+            <option value="auto">自动拉起当前端 DSH</option>
+          </select>
+        </div>
+        <div class="setting-item">
+          <div class="si-label"><span>DSH 启动后自动打开浏览器</span><div class="switch" id="swAutoBrowser"></div></div>
+        </div>
+        <div class="setting-item">
+          <div class="si-label"><span>端口占用策略</span></div>
+          <select id="portPolicy">
+            <option value="takeover">自动接管已有实例</option>
+            <option value="prompt">提示切换端口</option>
+          </select>
         </div>
 
-        <div id="consolePanel" class="active">
-            <div class="block">
-                <div class="control-card">
-                    <div class="form-row">
-                        <label>工作区目录</label>
-                        <input type="text" id="workspaceInput" value="">
-                        <button class="btn-small" id="browseBtn">浏览...</button>
-                    </div>
-                    <div class="form-row">
-                        <label>地址</label>
-                        <input type="text" id="addrInput" readonly>
-                        <button class="btn-small" id="openBtn">打开</button>
-                    </div>
-                    <div class="btn-group">
-                        <button class="btn-primary" id="startBtn">启动 Harness</button>
-                        <button class="btn-danger" id="stopBtn" disabled>停止 Harness</button>
-                        <button class="btn-normal" id="openBrowserBtn">打开浏览器</button>
-                        <button class="btn-normal" id="openLogsBtn">打开日志目录</button>
-                        <button class="btn-normal" id="hideBtn">隐藏到托盘</button>
-                    </div>
-                </div>
-            </div>
-            <div class="log-wrap">
-                <div class="log-box" id="logContent"></div>
-                <div class="log-footer">
-                    <span class="log-clear" id="clearLog">清空日志</span>
-                    <span id="logLineCount">0</span>
-                </div>
-            </div>
+        <h3 style="margin-top:20px">日志与缓存</h3>
+        <div class="setting-item">
+          <div class="si-label"><span>保存启动器日志</span><div class="switch on" id="swSaveLog"></div></div>
+        </div>
+        <div class="setting-item">
+          <div class="si-label"><span>日志保留天数</span></div>
+          <select id="logRetention">
+            <option value="7">7 天</option>
+            <option value="15" selected>15 天</option>
+            <option value="30">30 天</option>
+          </select>
+        </div>
+        <div class="setting-item">
+          <button class="btn-small" id="btnClearCache">清空启动器缓存</button>
+          <button class="btn-small" id="btnOpenLogDir" style="margin-left:6px">打开日志目录</button>
+        </div>
+      </div>
+
+      <!-- ===== 多端管理 ===== -->
+      <div class="settings-section" data-sec="endpoints">
+        <div class="settings-hint">多端管理：统一管理本机 Windows、WSL 各发行版、远程 SSH 中的 DSH 实例。每个端独立配置、独立会话、独立插件，切换端后控制台、会话、能力中心自动切换到对应端的数据。</div>
+        <div style="display:flex;gap:6px;margin-bottom:12px">
+          <button class="btn-small" id="btnScanEndpoints">自动扫描 WSL</button>
+          <button class="btn-small" id="btnRefreshEndpoints">刷新状态</button>
+        </div>
+        <div id="endpointList"></div>
+
+        <div class="endpoint-add-zone">
+          <h4>手动添加端</h4>
+          <div class="form-row">
+            <label>端名称</label>
+            <input type="text" id="newEpName" placeholder="如：WSL Ubuntu、远程开发机">
+          </div>
+          <div class="form-row">
+            <label>类型</label>
+            <select id="newEpType">
+              <option value="windows">Windows 本地</option>
+              <option value="wsl">WSL 子系统</option>
+              <option value="ssh">SSH 远程</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label>DSH 路径</label>
+            <input type="text" id="newEpPath" placeholder="如：/usr/local/bin/dsh 或 %APPDATA%\npm\dsh.cmd">
+          </div>
+          <div class="form-row">
+            <label>端口</label>
+            <input type="number" id="newEpPort" value="7602" style="flex:0 0 100px">
+            <label style="min-width:auto;margin-left:8px">工作目录</label>
+            <input type="text" id="newEpWorkspace" placeholder="可选">
+          </div>
+          <div class="form-row" id="sshFields" style="display:none">
+            <label>SSH 地址</label>
+            <input type="text" id="newEpSsh" placeholder="user@192.168.1.100">
+          </div>
+          <button class="btn-primary" id="btnAddEndpoint" style="margin-top:4px">添加端</button>
+        </div>
+      </div>
+
+      <!-- ===== 运行与用量 ===== -->
+      <div class="settings-section" data-sec="runtime">
+        <div class="settings-hint">以下配置直接读写当前端 DSH 的 settings.yaml，修改后需重启 DSH 生效。启动器不做统计，仅展示 DSH 原生配额与已用数据。</div>
+
+        <h3>全局运行参数</h3>
+        <div class="setting-item">
+          <div class="si-label"><span>监听地址</span></div>
+          <input type="text" id="cfgHost" value="127.0.0.1">
+          <div class="si-desc">DSH Web 服务绑定地址，默认仅本地访问。</div>
+        </div>
+        <div class="setting-item">
+          <div class="si-label"><span>监听端口</span></div>
+          <input type="number" id="cfgPort" value="7602">
+          <div class="si-desc">DSH Web 服务端口，修改后需重启。</div>
+        </div>
+        <div class="setting-item">
+          <div class="si-label"><span>允许跨域</span><div class="switch" id="swCors"></div></div>
+          <div class="si-desc">开启后允许其他域名页面调用 DSH API。</div>
+        </div>
+        <div class="setting-item">
+          <div class="si-label"><span>会话存储路径</span></div>
+          <input type="text" id="cfgSessionPath" value="%APPDATA%\dsh-desktop\harness\sessions">
+        </div>
+        <div class="setting-item">
+          <div class="si-label"><span>缓存大小限制 (MB)</span></div>
+          <input type="number" id="cfgCacheSize" value="512">
         </div>
 
-        <div id="sessionPanel">
-            <div class="session-toolbar">
-                <button class="btn-small" id="refreshSessions">刷新</button>
-                <button class="btn-danger" id="deleteSession">删除会话</button>
-                <input type="text" id="searchSessions" placeholder="搜索会话标题 / 工作区">
-            </div>
-            <div class="session-body">
-                <div class="session-tree" id="sessionTree"></div>
-                <div class="session-detail" id="sessionDetail">选择左侧会话查看对话内容</div>
-            </div>
+        <h3 style="margin-top:20px">资源限额</h3>
+        <div class="setting-item">
+          <div class="si-label"><span>单会话最大 Token</span><span class="range-val" id="limitTokenVal">32000</span></div>
+          <input type="range" id="limitToken" min="4000" max="128000" step="2000" value="32000">
+          <div class="si-desc">单会话输入+输出 Token 上限，超出后触发超限行为。</div>
         </div>
+        <div class="setting-item">
+          <div class="si-label"><span>同时活跃会话数</span><span class="range-val" id="limitSessionVal">5</span></div>
+          <input type="range" id="limitSession" min="1" max="20" value="5">
+        </div>
+        <div class="setting-item">
+          <div class="si-label"><span>单日总 Token 上限</span><span class="range-val" id="limitDailyVal">500000</span></div>
+          <input type="range" id="limitDaily" min="50000" max="2000000" step="10000" value="500000">
+        </div>
+        <div class="setting-item">
+          <div class="si-label"><span>超限行为</span></div>
+          <select id="overLimitBehavior">
+            <option value="warn">仅弹窗提醒</option>
+            <option value="stop">停止生成</option>
+          </select>
+        </div>
+
+        <h3 style="margin-top:20px">用量概览（当前端）</h3>
+        <div class="usage-item">
+          <div class="ui-label"><span>当日已消耗 Token</span><span class="val" id="usageToken">128,450 / 500,000</span></div>
+          <div class="usage-bar"><div class="fill" id="barToken" style="width:25.7%"></div></div>
+        </div>
+        <div class="usage-item">
+          <div class="ui-label"><span>当前活跃会话</span><span class="val" id="usageSession">2 / 5</span></div>
+          <div class="usage-bar"><div class="fill" id="barSession" style="width:40%"></div></div>
+        </div>
+        <div class="usage-item">
+          <div class="ui-label"><span>今日插件总调用</span><span class="val" id="usagePlugin">347 次</span></div>
+          <div class="usage-bar"><div class="fill" id="barPlugin" style="width:18%"></div></div>
+        </div>
+        <div style="margin-top:10px">
+          <button class="btn-small" id="btnRefreshUsage">刷新用量</button>
+          <button class="btn-small" id="btnExportUsage" style="margin-left:6px">导出用量记录</button>
+        </div>
+      </div>
+
+      <!-- ===== 数据与维护 ===== -->
+      <div class="settings-section" data-sec="maintenance">
+        <h3>快速跳转（当前端）</h3>
+        <div class="action-grid">
+          <button data-open="sessions">打开 DSH 会话目录</button>
+          <button data-open="plugins">打开插件安装目录</button>
+          <button data-open="settings">打开 DSH 配置文件</button>
+          <button data-open="logs">打开启动器日志目录</button>
+          <button data-open="dshhome">打开 DSH_HOME 根目录</button>
+          <button data-open="trash">打开会话回收站</button>
+        </div>
+
+        <h3 style="margin-top:20px">配置导入导出</h3>
+        <div class="setting-item">
+          <div class="si-label"><span>导出范围</span></div>
+          <div style="margin-top:4px;font-size:12px">
+            <label style="display:block;margin-bottom:4px"><input type="checkbox" id="expLauncher" checked> 启动器偏好配置</label>
+            <label style="display:block;margin-bottom:4px"><input type="checkbox" id="expDsh" checked> 当前端 DSH 运行配置</label>
+            <label style="display:block;margin-bottom:4px"><input type="checkbox" id="expEndpoints"> 多端配置列表</label>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn-normal" id="btnExportConfig">导出配置</button>
+          <button class="btn-normal" id="btnImportConfig">导入配置</button>
+        </div>
+        <div class="si-desc" style="margin-top:6px">导入支持合并导入（保留现有）或覆盖导入（全部替换）。</div>
+
+        <div class="reset-zone">
+          <h4>危险操作区</h4>
+          <p style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">重置操作不可撤销，请谨慎操作。</p>
+          <button class="btn-small" id="btnResetUI">仅重置外观与偏好</button>
+          <button class="btn-small" id="btnResetEndpoints">仅重置多端列表</button>
+          <button class="btn-small" id="btnResetDsh">仅重置当前端 DSH 配置</button>
+          <button class="btn-danger" id="btnResetAll">重置全部配置</button>
+        </div>
+      </div>
+
     </div>
+  </div>
+</div>
 
-    <script>
-        const invoke = window.__TAURI__.core.invoke;
-        const listen = window.__TAURI__.event.listen;
+<!-- 插件市场弹窗 -->
+<div class="market-modal" id="marketModal">
+  <div class="market-box">
+    <div class="mb-head">
+      <h3>DSH 插件市场（当前端）</h3>
+      <button class="settings-close" id="marketClose">&times;</button>
+    </div>
+    <div class="mb-body" id="marketBody"></div>
+  </div>
+</div>
 
-        const statusDot = document.getElementById('statusDot');
-        const statusText = document.getElementById('statusText');
-        const startBtn = document.getElementById('startBtn');
-        const stopBtn = document.getElementById('stopBtn');
-        const logContent = document.getElementById('logContent');
-        const logCount = document.getElementById('logLineCount');
-        let logLines = 0;
-        let selectedSessionId = null;
+<!-- 二次确认弹窗 -->
+<div class="confirm-modal" id="confirmModal">
+  <div class="confirm-box">
+    <h4 id="confirmTitle">确认操作</h4>
+    <p id="confirmMsg">确定要执行此操作吗？</p>
+    <div class="cb-actions">
+      <button class="btn-normal" id="confirmCancel">取消</button>
+      <button class="btn-primary" id="confirmOk">确认</button>
+    </div>
+  </div>
+</div>
 
-        function appendLog(level, text) {
-            const span = document.createElement('span');
-            span.className = 'log-' + (level === 'err' ? 'err' : (level === 'ready' ? 'ready' : (level === 'start' ? 'start' : 'info')));
-            span.textContent = text + '\n';
-            logContent.appendChild(span);
-            logContent.scrollTop = logContent.scrollHeight;
-            logLines++;
-            logCount.textContent = logLines;
-        }
+<!-- ===== 主窗口 ===== -->
+<div class="window-container">
+  <div class="win-header">
+    <h1>DSH Desktop</h1>
+    <div class="header-right">
+      <!-- 端切换器 -->
+      <div class="endpoint-switcher">
+        <div class="endpoint-btn" id="endpointBtn">
+          <span class="ep-dot" id="epDot"></span>
+          <span class="ep-name" id="epName">本地 Windows</span>
+        </div>
+        <div class="endpoint-dropdown" id="endpointDropdown"></div>
+      </div>
+      <button class="btn-settings" id="btnOpenSettings">设置</button>
+      <div class="status-indicator">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">DSH 未运行</span>
+      </div>
+    </div>
+  </div>
 
-        function applyStatus(status, text) {
-            const map = {
-                stopped: ['', '已停止', '#999'],
-                starting: ['starting', '正在启动…', ''],
-                ready: ['running', '运行中', ''],
-                error: ['error', '异常 / 超时', ''],
-            };
-            const conf = map[status] || map.stopped;
-            statusDot.className = 'status-dot ' + conf[0];
-            statusText.textContent = text || conf[1];
-            const running = status === 'ready' || status === 'starting';
-            startBtn.disabled = running;
-            stopBtn.disabled = !running;
-        }
+  <div class="block">
+    <div class="addr-bar">
+      <span class="path-text" id="workspacePath">工作区：D:\RJian\AIProjects\Projects\dsh-desktop</span>
+      <span class="link-url" id="openUrlLink">http://127.0.0.1:7602/</span>
+    </div>
+  </div>
 
-        async function refreshState() {
-            try {
-                const s = await invoke('get_state');
-                document.getElementById('workspaceInput').value = s.workspace;
-                document.getElementById('addrInput').value = s.url;
-                document.getElementById('pathText').textContent = '工作区：' + s.workspace;
-                document.getElementById('urlLink').textContent = s.url;
-                applyStatus(s.status);
-                try {
-                    const sessions = await invoke('list_sessions', { filter: '' });
-                    appendLog('info', '自检: 会话 ' + sessions.length + ' 个');
-                } catch (e) {
-                    appendLog('err', '自检会话失败: ' + String(e));
-                }
-            } catch (e) {
-                appendLog('err', String(e));
-            }
-        }
+  <div class="block">
+    <div class="tab-group">
+      <div class="tab-btn active" data-tab="console">控制台</div>
+      <div class="tab-btn" data-tab="session">会话管理</div>
+      <div class="tab-btn" data-tab="capability">DSH 能力中心</div>
+    </div>
+  </div>
 
-        listen('harness-status', (e) => applyStatus(e.payload.status, e.payload.text));
-        listen('harness-log', (e) => appendLog(e.payload.level, e.payload.text));
+  <!-- 控制台 -->
+  <div class="tab-content active" data-tab="console">
+    <div class="block">
+      <div class="control-card">
+        <div class="form-row">
+          <label>工作目录</label>
+          <input type="text" id="workspaceInput" value="D:\RJian\AIProjects\Projects\dsh-desktop">
+          <button class="btn-small" id="btnPickWorkspace">浏览...</button>
+        </div>
+        <div class="form-row">
+          <label>访问地址</label>
+          <input type="text" id="urlInput" value="http://127.0.0.1:7602/" readonly>
+          <button class="btn-small" id="btnOpenBrowser">打开网页</button>
+        </div>
+        <div class="btn-group">
+          <button class="btn-primary" id="btnStart">启动 DSH</button>
+          <button class="btn-normal" id="btnStop" disabled>停止 DSH</button>
+          <button class="btn-normal" id="btnOpenLogDir2">打开日志目录</button>
+          <button class="btn-normal" id="btnHideTray">最小化到托盘</button>
+        </div>
+      </div>
+    </div>
+    <div class="log-wrap">
+      <div class="log-box" id="logContent">等待启动 DSH 基座...</div>
+      <div class="log-footer">
+        <span class="log-clear" id="clearLog">清空日志</span>
+        <span id="logLineCount">0</span>
+      </div>
+    </div>
+  </div>
 
-        document.getElementById('startBtn').onclick = async () => {
-            try {
-                const ws = document.getElementById('workspaceInput').value;
-                await invoke('start_harness', { workspace: ws, port: 7602 });
-            } catch (e) { appendLog('err', String(e)); }
-        };
-        document.getElementById('stopBtn').onclick = async () => {
-            try { await invoke('stop_harness'); } catch (e) { appendLog('err', String(e)); }
-        };
-        document.getElementById('openBrowserBtn').onclick = async () => {
-            try { await invoke('open_browser'); } catch (e) { appendLog('err', String(e)); }
-        };
-        document.getElementById('openBtn').onclick = async () => {
-            try { await invoke('open_browser'); } catch (e) { appendLog('err', String(e)); }
-        };
-        document.getElementById('urlLink').onclick = async () => {
-            try { await invoke('open_browser'); } catch (e) { appendLog('err', String(e)); }
-        };
-        document.getElementById('openLogsBtn').onclick = async () => {
-            try { await invoke('open_logs_dir'); } catch (e) { appendLog('err', String(e)); }
-        };
-        document.getElementById('hideBtn').onclick = async () => {
-            try { await invoke('hide_to_tray'); } catch (e) { appendLog('err', String(e)); }
-        };
-        document.getElementById('browseBtn').onclick = async () => {
-            try {
-                const p = await invoke('pick_workspace');
-                if (p) {
-                    document.getElementById('workspaceInput').value = p;
-                    await invoke('set_workspace', { path: p });
-                    refreshState();
-                }
-            } catch (e) { appendLog('err', String(e)); }
-        };
-        document.getElementById('clearLog').onclick = () => {
-            logContent.innerHTML = '';
-            logLines = 0;
-            logCount.textContent = '0';
-        };
+  <!-- 会话管理 -->
+  <div class="tab-content" data-tab="session">
+    <div style="display:flex;gap:6px;padding:0 var(--safe-padding);margin-top:var(--gap-block)">
+      <button class="btn-small" id="btnRefreshSessions">刷新</button>
+      <button class="btn-danger" id="btnDeleteSession">删除会话</button>
+      <input type="text" id="sessionSearch" placeholder="搜索会话标题 / 工作区" style="flex:1;padding:5px 8px;border:1px solid var(--border-color);border-radius:3px;font-size:12px">
+    </div>
+    <div class="session-layout">
+      <div class="session-list" id="sessionList">
+        <div class="session-empty" style="padding:20px;text-align:center;color:var(--text-secondary);font-size:12px">加载会话列表...</div>
+      </div>
+      <div class="session-detail" id="sessionDetail">
+        <div class="session-empty">选择左侧会话查看对话内容</div>
+      </div>
+    </div>
+  </div>
 
-        document.querySelectorAll('.tab-btn').forEach(tab => {
-            tab.onclick = () => {
-                document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
-                tab.classList.add('active');
-                const target = tab.dataset.tab;
-                document.getElementById('consolePanel').classList.toggle('active', target === 'console');
-                document.getElementById('sessionPanel').classList.toggle('active', target === 'session');
-                if (target === 'session') refreshSessions();
-            };
-        });
+  <!-- DSH 能力中心 -->
+  <div class="tab-content" data-tab="capability">
+    <div class="capability-wrap">
+      <div class="cap-hint">以下为当前端 DSH 基座的能力管理。插件是能力载体，技能与 MCP 是插件暴露的能力输出。切换端后数据自动切换。</div>
+      <div class="sub-tab-group">
+        <div class="sub-tab-btn active" data-sub="plugin">插件管理</div>
+        <div class="sub-tab-btn" data-sub="skill">技能 Skill</div>
+        <div class="sub-tab-btn" data-sub="mcp">MCP 服务</div>
+      </div>
 
-        function formatTime(ms) {
-            if (!ms) return '';
-            const d = new Date(ms);
-            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-        }
-        function formatSize(b) {
-            if (b < 1024) return b + ' B';
-            if (b < 1048576) return (b / 1024).toFixed(0) + ' KB';
-            return (b / 1048576).toFixed(1) + ' MB';
-        }
+      <!-- 插件 -->
+      <div class="sub-tab-content active" data-sub="plugin">
+        <div class="cap-toolbar">
+          <input type="text" id="pluginSearch" placeholder="搜索插件名称...">
+          <button class="btn-small" id="btnRefreshPlugin">刷新</button>
+          <button class="btn-small" id="btnImportPlugin">导入本地</button>
+          <button class="btn-small" id="btnOpenMarket">插件市场</button>
+        </div>
+        <div id="pluginList"></div>
+      </div>
 
-        async function refreshSessions() {
-            const tree = document.getElementById('sessionTree');
-            tree.innerHTML = '';
-            try {
-                const filter = document.getElementById('searchSessions').value.trim();
-                const sessions = await invoke('list_sessions', { filter });
-                const byWs = {};
-                sessions.forEach(s => {
-                    (byWs[s.workspace] = byWs[s.workspace] || []).push(s);
-                });
-                Object.keys(byWs).sort().forEach(ws => {
-                    const group = document.createElement('div');
-                    group.className = 'ws-group';
-                    const title = document.createElement('div');
-                    title.className = 'ws-title';
-                    title.textContent = ws;
-                    group.appendChild(title);
-                    byWs[ws].forEach(s => {
-                        const item = document.createElement('div');
-                        item.className = 'session-item' + (s.id === selectedSessionId ? ' active' : '');
-                        item.dataset.id = s.id;
-                        const t = document.createElement('div');
-                        t.textContent = s.title || '未命名会话';
-                        const meta = document.createElement('div');
-                        meta.className = 'meta';
-                        meta.textContent = formatTime(s.mtime_ms) + ' · ' + formatSize(s.size);
-                        item.appendChild(t);
-                        item.appendChild(meta);
-                        item.onclick = () => loadSession(s.id, item);
-                        group.appendChild(item);
-                    });
-                    tree.appendChild(group);
-                });
-                if (Object.keys(byWs).length === 0) {
-                    tree.textContent = '未找到会话';
-                }
-            } catch (e) {
-                tree.textContent = String(e);
-            }
-        }
+      <!-- Skill -->
+      <div class="sub-tab-content" data-sub="skill">
+        <div class="cap-toolbar">
+          <select id="skillFilter"><option value="">全部插件</option></select>
+          <label><input type="checkbox" id="skillOnlyEnabled"> 只看已启用</label>
+        </div>
+        <div id="skillList"></div>
+      </div>
 
-        async function loadSession(id, item) {
-            selectedSessionId = id;
-            document.querySelectorAll('.session-item').forEach(el => el.classList.remove('active'));
-            if (item) item.classList.add('active');
-            const detail = document.getElementById('sessionDetail');
-            detail.innerHTML = '加载中…';
-            try {
-                const blocks = await invoke('get_session', { id });
-                detail.innerHTML = '';
-                if (!blocks || blocks.length === 0) {
-                    detail.textContent = '（空会话）';
-                    return;
-                }
-                blocks.forEach(b => {
-                    const div = document.createElement('div');
-                    div.className = 'detail-' + b.kind;
-                    div.textContent = b.text;
-                    detail.appendChild(div);
-                });
-            } catch (e) {
-                detail.textContent = String(e);
-            }
-        }
+      <!-- MCP -->
+      <div class="sub-tab-content" data-sub="mcp">
+        <div class="cap-toolbar">
+          <button class="btn-small" id="btnAddMcp">添加自定义 MCP</button>
+          <button class="btn-small" id="btnRefreshMcp">刷新状态</button>
+          <button class="btn-small" id="btnTestAllMcp">全部连接测试</button>
+        </div>
+        <div id="mcpList"></div>
+      </div>
+    </div>
+  </div>
+</div>
 
-        document.getElementById('refreshSessions').onclick = refreshSessions;
-        document.getElementById('searchSessions').addEventListener('keyup', (e) => {
-            if (e.key === 'Enter') refreshSessions();
-        });
-        document.getElementById('deleteSession').onclick = async () => {
-            if (!selectedSessionId) return;
-            if (!confirm('确定删除该会话吗？会移入 sessions_trash 备份目录，可恢复。')) return;
-            try {
-                await invoke('delete_session', { id: selectedSessionId });
-                selectedSessionId = null;
-                document.getElementById('sessionDetail').textContent = '会话已移入备份';
-                refreshSessions();
-            } catch (e) {
-                document.getElementById('sessionDetail').textContent = String(e);
-            }
-        };
+<script>
+/* ============================================================
+   Tauri 兼容层
+   ============================================================ */
+const HAS_TAURI = !!(window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke);
+// 尚未在 DSH 官方能力中确认/未实现后端的功能：仅原型预览，Tauri 环境回退为空数据
+const PROTO_CMDS = new Set([
+  "toggle_plugin","reload_plugin","uninstall_plugin",
+  "get_plugin_config","set_plugin_config","import_local_plugin",
+  "toggle_skill","get_skill_config","set_skill_config",
+  "toggle_mcp","test_mcp","add_mcp","remove_mcp",
+  "get_market","install_market_plugin",
+  "get_usage_stats","get_usage_limits","set_usage_limits",
+  "get_dsh_settings","set_dsh_settings",
+  "export_config","import_config","reset_config",
+  "list_endpoints","add_endpoint","update_endpoint","remove_endpoint","set_active_endpoint",
+  "scan_wsl","ping_endpoint"
+]);
+async function invoke(cmd, args){
+  if(HAS_TAURI && !PROTO_CMDS.has(cmd)) return window.__TAURI__.core.invoke(cmd, args);
+  return MOCK[cmd] ? MOCK[cmd](args) : Promise.resolve(null);
+}
 
-        (function initKanban() {
-            const kanbanImg = document.getElementById('kanbanImg');
-            const settingPanel = document.getElementById('settingPanel');
-            const sizeSlider = document.getElementById('sizeSlider');
-            const opacitySlider = document.getElementById('opacitySlider');
-            const sizeValueText = document.getElementById('sizeValue');
-            const opacityValueText = document.getElementById('opacityValue');
-            const posButtons = document.querySelectorAll('.pos-btn');
-            const DEFAULT_CONFIG = { width: 340, opacity: 0.38, position: 'rb' };
-            let currentConfig = { ...DEFAULT_CONFIG };
-            try {
-                const saved = localStorage.getItem('dsh_kanban_config');
-                if (saved) currentConfig = JSON.parse(saved);
-            } catch (e) {}
-            function applyConfig() {
-                document.documentElement.style.setProperty('--kanban-width', currentConfig.width + 'px');
-                document.documentElement.style.setProperty('--kanban-opacity', currentConfig.opacity);
-                kanbanImg.classList.toggle('lb', currentConfig.position === 'lb');
-            }
-            function syncUI() {
-                sizeSlider.value = currentConfig.width;
-                opacitySlider.value = Math.round(currentConfig.opacity * 100);
-                sizeValueText.textContent = currentConfig.width + 'px';
-                opacityValueText.textContent = currentConfig.opacity.toFixed(2);
-                posButtons.forEach(b => b.classList.toggle('active', b.dataset.pos === currentConfig.position));
-            }
-            function saveConfig() { localStorage.setItem('dsh_kanban_config', JSON.stringify(currentConfig)); }
-            document.getElementById('openSetting').onclick = () => settingPanel.classList.toggle('show');
-            document.getElementById('closeSetting').onclick = () => settingPanel.classList.remove('show');
-            sizeSlider.oninput = () => { currentConfig.width = Number(sizeSlider.value); sizeValueText.textContent = currentConfig.width + 'px'; applyConfig(); };
-            opacitySlider.oninput = () => { currentConfig.opacity = Number(opacitySlider.value) / 100; opacityValueText.textContent = currentConfig.opacity.toFixed(2); applyConfig(); };
-            posButtons.forEach(btn => btn.onclick = () => { currentConfig.position = btn.dataset.pos; applyConfig(); syncUI(); saveConfig(); });
-            document.getElementById('resetSetting').onclick = () => { currentConfig = { ...DEFAULT_CONFIG }; applyConfig(); syncUI(); saveConfig(); };
-            sizeSlider.onchange = saveConfig;
-            opacitySlider.onchange = saveConfig;
-            applyConfig();
-            syncUI();
-        })();
+/* ===== 演示数据已剔除：浏览器预览仅返回空数据，不展示伪造内容 ===== */
+const MOCK = {
+  get_state: () => {
+    const ep=currentEndpoint();
+    return {status:"stopped",host:"127.0.0.1",port:ep.port,workspace:ep.workspace||"",
+      url:`http://127.0.0.1:${ep.port}/`,dsh_home:ep.dshHome||"",dsh_path:ep.path};
+  },
+  start_harness: () => ({status:"starting"}),
+  stop_harness: () => ({status:"stopped"}),
+  list_plugins: () => [],
+  list_skills: () => [],
+  list_mcp: () => [],
+  list_sessions: () => [],
+  get_session: () => [],
+  get_market: () => [],
+  scan_wsl: () => [],
+  list_endpoints: () => [],
+  get_usage_stats: () => null,
+  get_usage_limits: () => null,
+  get_dsh_settings: () => null
+};
 
-        refreshState();
-    </script>
+
+/* ============================================================
+   多端管理（核心新增）
+   ============================================================ */
+const EP_KEY="dsh_launcher_endpoints";
+const DEFAULT_ENDPOINTS=[
+  {id:"ep-win",name:"本地 Windows",type:"windows",path:"",port:7602,
+   workspace:"",dshHome:"",version:"",status:"stopped",active:true,ssh:""}
+];
+let endpoints=loadEndpoints();
+
+function loadEndpoints(){
+  try{const d=JSON.parse(localStorage.getItem(EP_KEY)||"null");return d&&d.length?d:JSON.parse(JSON.stringify(DEFAULT_ENDPOINTS))}
+  catch(e){return JSON.parse(JSON.stringify(DEFAULT_ENDPOINTS))}
+}
+function saveEndpoints(){localStorage.setItem(EP_KEY,JSON.stringify(endpoints))}
+function currentEndpoint(){return endpoints.find(e=>e.active)||endpoints[0]}
+function setActiveEndpoint(id){
+  endpoints.forEach(e=>e.active=(e.id===id));
+  saveEndpoints();
+  updateEndpointUI();
+  // 切换端后刷新所有数据
+  const ep=currentEndpoint();
+  $("workspaceInput").value=ep.workspace||"";
+  $("workspacePath").textContent="工作区："+(ep.workspace||"未设置");
+  $("urlInput").value=`http://127.0.0.1:${ep.port}/`;
+  $("openUrlLink").textContent=`http://127.0.0.1:${ep.port}/`;
+  $("cfgPort").value=ep.port;
+  appendLog(`[多端] 已切换到「${ep.name}」（${ep.type}，端口 ${ep.port}）`,"log-ready");
+  if(document.querySelector('.tab-content[data-tab="capability"]').classList.contains("active")){
+    renderPlugins();renderSkills();renderMcp();
+  }
+  if(document.querySelector('.tab-content[data-tab="session"]').classList.contains("active")){
+    loadSessions();
+  }
+}
+
+function typeLabel(t){return t==="windows"?"Windows":t==="wsl"?"WSL":"SSH 远程"}
+function typeTagClass(t){return t==="windows"?"tag-builtin":t==="wsl"?"tag-wsl":"tag-ssh"}
+
+function updateEndpointUI(){
+  const ep=currentEndpoint();
+  $("epName").textContent=ep.name;
+  $("epDot").style.background=ep.status==="running"?"var(--success-green)":ep.status==="error"?"var(--error-red)":"#999";
+  // 下拉列表
+  const dd=$("endpointDropdown");
+  dd.innerHTML=endpoints.map(e=>`
+    <div class="ep-item ${e.active?"active":""}" data-id="${e.id}">
+      <span>${e.name}</span>
+      <span class="ep-type">${typeLabel(e.type)}</span>
+    </div>`).join("")+`<div class="ep-manage" id="epManageBtn">管理多端设置...</div>`;
+  dd.querySelectorAll(".ep-item").forEach(item=>{
+    item.onclick=()=>{setActiveEndpoint(item.dataset.id);dd.classList.remove("show")};
+  });
+  $("epManageBtn").onclick=()=>{dd.classList.remove("show");openSettings();switchSettingsSection("endpoints")};
+}
+
+function renderEndpointList(){
+  const box=$("endpointList");
+  box.innerHTML="";
+  endpoints.forEach(e=>{
+    const card=document.createElement("div");
+    card.className="endpoint-card"+(e.active?" active":"");
+    const statusCls=e.status==="running"?"badge-on":e.status==="error"?"badge-err":"badge-off";
+    const statusTxt=e.status==="running"?"运行中":e.status==="error"?"异常":e.status==="unknown"?"未知":"已停止";
+    card.innerHTML=`
+      <div class="ec-head">
+        <div><span class="ec-name">${e.name}</span>
+          <span class="ec-type ${typeTagClass(e.type)}">${typeLabel(e.type)}</span>
+          ${e.active?'<span class="ec-type tag-builtin">当前</span>':""}</div>
+        <span class="status-badge ${statusCls}">${statusTxt}</span>
+      </div>
+      <div class="ec-meta">
+        类型：${typeLabel(e.type)}${e.distro?`（${e.distro}）`:""}${e.ssh?` · ${e.ssh}`:""}<br>
+        DSH 路径：${e.path}<br>
+        端口：${e.port} · 版本：${e.version||"未检测"}<br>
+        工作目录：${e.workspace||"未设置"}
+      </div>
+      <div class="ec-actions">
+        ${e.active?"":`<button class="btn-small" data-act="activate" data-id="${e.id}">切换到此端</button>`}
+        <button class="btn-small" data-act="edit" data-id="${e.id}">编辑</button>
+        <button class="btn-small" data-act="ping" data-id="${e.id}">检测连通</button>
+        ${e.type==="windows"?"":`<button class="btn-danger" data-act="remove" data-id="${e.id}">删除</button>`}
+      </div>`;
+    box.appendChild(card);
+  });
+  box.querySelectorAll("button[data-act]").forEach(btn=>{
+    btn.onclick=()=>{
+      const id=btn.dataset.id,act=btn.dataset.act,e=endpoints.find(x=>x.id===id);
+      if(act==="activate"){setActiveEndpoint(id);renderEndpointList()}
+      else if(act==="edit"){showConfirm("编辑端",`编辑「${e.name}」配置（原型）。\n实际实现将弹出表单修改名称、路径、端口等。`,()=>{})}
+      else if(act==="ping"){appendLog(`[多端] 检测 ${e.name} 连通性...`,"log-start");setTimeout(()=>{
+        const ok=Math.random()>0.3;e.status=ok?"stopped":"error";saveEndpoints();renderEndpointList();updateEndpointUI();
+        appendLog(`[多端] ${e.name} ${ok?"可达":"不可达"}`,ok?"log-ready":"log-error");},600)}
+      else if(act==="remove"){showConfirm("删除端",`确定要删除端「${e.name}」吗？该端的会话与配置不会被删除，仅从管理列表移除。`,()=>{
+        endpoints=endpoints.filter(x=>x.id!==id);if(e.active&&endpoints.length)endpoints[0].active=true;saveEndpoints();renderEndpointList();updateEndpointUI();
+      })}
+    };
+  });
+}
+
+$("btnScanEndpoints")?.addEventListener("click",async()=>{
+  if(HAS_TAURI){appendLog("[多端] WSL 自动扫描待接入（后端未实现）","log-stop");return}
+  appendLog("[多端] 正在扫描 WSL 子系统中的 DSH...","log-start");
+  const found=await invoke("scan_wsl");
+  let added=0;
+  found.forEach(f=>{
+    if(!endpoints.some(e=>e.distro===f.distro)){
+      endpoints.push({id:"ep-wsl-"+Date.now()+Math.random().toString(36).slice(2,6),
+        name:f.name,type:"wsl",distro:f.distro,path:f.path,port:7600+endpoints.length,
+        workspace:"~",dshHome:"~/.config/dsh-desktop/harness",version:f.version,status:"stopped",active:false,ssh:""});
+      added++;
+    }
+  });
+  saveEndpoints();renderEndpointList();
+  appendLog(`[多端] 扫描完成，新增 ${added} 个 WSL 端`,"log-ready");
+});
+$("btnRefreshEndpoints")?.addEventListener("click",()=>{renderEndpointList();appendLog("[多端] 端状态已刷新","log-stop")});
+$("newEpType")?.addEventListener("change",function(){$("sshFields").style.display=this.value==="ssh"?"flex":"none"});
+$("btnAddEndpoint")?.addEventListener("click",()=>{
+  const name=$("newEpName").value.trim(),type=$("newEpType").value,path=$("newEpPath").value.trim();
+  if(!name||!path){showConfirm("提示","请填写端名称和 DSH 路径。",()=>{});return}
+  endpoints.push({id:"ep-"+Date.now(),name,type,path,port:+$("newEpPort").value||7602,
+    workspace:$("newEpWorkspace").value.trim(),dshHome:"~/.config/dsh-desktop/harness",
+    version:"未检测",status:"stopped",active:false,ssh:type==="ssh"?$("newEpSsh").value.trim():"",
+    distro:type==="wsl"?"自定义":""});
+  saveEndpoints();renderEndpointList();updateEndpointUI();
+  $("newEpName").value="";$("newEpPath").value="";$("newEpWorkspace").value="";$("newEpSsh").value="";
+  appendLog(`[多端] 已添加端「${name}」`,"log-ready");
+});
+
+// 端切换器下拉
+$("endpointBtn").onclick=e=>{e.stopPropagation();$("endpointDropdown").classList.toggle("show")};
+document.addEventListener("click",()=>$("endpointDropdown").classList.remove("show"));
+
+/* ============================================================
+   全局状态 & 工具
+   ============================================================ */
+let dshRunning=false;
+let logLines=0;
+let currentSessionId=null;
+
+function $(id){return document.getElementById(id)}
+function appendLog(text,cls){
+  const box=$("logContent");const s=document.createElement("span");
+  if(cls)s.className=cls;s.textContent=text+"\n";
+  box.appendChild(s);box.scrollTop=box.scrollHeight;logLines++;
+  $("logLineCount").textContent=logLines;
+}
+function updateStatus(running,starting){
+  const dot=$("statusDot"),txt=$("statusText");
+  dot.className="status-dot"+(starting?" starting":running?" running":"");
+  txt.textContent=starting?"DSH 启动中...":running?"DSH 运行中":"DSH 未运行";
+  $("btnStart").disabled=running||starting;$("btnStop").disabled=!running;
+  const ep=currentEndpoint();if(running)ep.status="running";else if(!starting)ep.status="stopped";
+}
+function showConfirm(title,msg,onOk){
+  $("confirmTitle").textContent=title;$("confirmMsg").textContent=msg;
+  $("confirmModal").classList.add("show");
+  $("confirmOk").onclick=()=>{$("confirmModal").classList.remove("show");onOk&&onOk()};
+  $("confirmCancel").onclick=()=>$("confirmModal").classList.remove("show");
+}
+function fmtTime(ms){const d=new Date(ms);return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`}
+
+/* ============================================================
+   主 Tab 切换
+   ============================================================ */
+document.querySelectorAll(".tab-btn").forEach(btn=>{
+  btn.onclick=()=>{
+    document.querySelectorAll(".tab-btn").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    document.querySelectorAll(".tab-content").forEach(c=>c.classList.remove("active"));
+    document.querySelector(`.tab-content[data-tab="${btn.dataset.tab}"]`).classList.add("active");
+    if(btn.dataset.tab==="session")loadSessions();
+    if(btn.dataset.tab==="capability"){renderPlugins();renderSkills();renderMcp()}
+  };
+});
+
+/* 能力中心子 Tab */
+document.querySelectorAll('.capability-wrap .sub-tab-btn').forEach(btn=>{
+  btn.onclick=()=>{
+    const wrap=btn.closest(".capability-wrap");
+    wrap.querySelectorAll(".sub-tab-btn").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    wrap.querySelectorAll(".sub-tab-content").forEach(c=>c.classList.remove("active"));
+    wrap.querySelector(`.sub-tab-content[data-sub="${btn.dataset.sub}"]`).classList.add("active");
+  };
+});
+
+/* ============================================================
+   设置抽屉 + 可拖拽拉伸
+   ============================================================ */
+function openSettings(){
+  $("settingsMask").classList.add("show");
+  $("settingsDrawer").classList.add("show");
+  renderEndpointList();
+}
+function closeSettings(){
+  $("settingsMask").classList.remove("show");
+  $("settingsDrawer").classList.remove("show");
+}
+function switchSettingsSection(sec){
+  document.querySelectorAll(".settings-nav .nav-item").forEach(n=>n.classList.remove("active"));
+  document.querySelector(`.settings-nav .nav-item[data-sec="${sec}"]`).classList.add("active");
+  document.querySelectorAll(".settings-section").forEach(s=>s.classList.remove("active"));
+  document.querySelector(`.settings-section[data-sec="${sec}"]`).classList.add("active");
+}
+$("btnOpenSettings").onclick=openSettings;
+$("settingsClose").onclick=closeSettings;
+$("settingsMask").onclick=closeSettings;
+
+document.querySelectorAll(".settings-nav .nav-item").forEach(item=>{
+  item.onclick=()=>{
+    document.querySelectorAll(".settings-nav .nav-item").forEach(n=>n.classList.remove("active"));
+    item.classList.add("active");
+    document.querySelectorAll(".settings-section").forEach(s=>s.classList.remove("active"));
+    document.querySelector(`.settings-section[data-sec="${item.dataset.sec}"]`).classList.add("active");
+    if(item.dataset.sec==="runtime")refreshUsage();
+    if(item.dataset.sec==="endpoints")renderEndpointList();
+  };
+});
+
+/* 抽屉拖拽拉伸 */
+const DRAWER_KEY="dsh_launcher_drawer_width";
+let savedDrawerWidth=parseInt(localStorage.getItem(DRAWER_KEY)||"440");
+if(savedDrawerWidth<320)savedDrawerWidth=320;
+if(savedDrawerWidth>760)savedDrawerWidth=760;
+document.documentElement.style.setProperty("--drawer-width",savedDrawerWidth+"px");
+$("drawerWidthLabel").textContent=savedDrawerWidth+"px";
+
+let isDragging=false,dragStartX=0,dragStartWidth=0;
+$("dragHandle").addEventListener("mousedown",e=>{
+  isDragging=true;dragStartX=e.clientX;
+  dragStartWidth=parseInt(getComputedStyle(document.documentElement).getPropertyValue("--drawer-width"))||440;
+  $("dragHandle").classList.add("dragging");
+  document.body.style.cursor="ew-resize";
+  document.body.style.userSelect="none";
+  e.preventDefault();
+});
+document.addEventListener("mousemove",e=>{
+  if(!isDragging)return;
+  // 抽屉在右侧，向左拖增大宽度
+  let newWidth=dragStartWidth+(dragStartX-e.clientX);
+  newWidth=Math.max(320,Math.min(760,newWidth));
+  document.documentElement.style.setProperty("--drawer-width",newWidth+"px");
+  $("drawerWidthLabel").textContent=newWidth+"px";
+});
+document.addEventListener("mouseup",()=>{
+  if(!isDragging)return;
+  isDragging=false;
+  $("dragHandle").classList.remove("dragging");
+  document.body.style.cursor="";
+  document.body.style.userSelect="";
+  const w=parseInt(getComputedStyle(document.documentElement).getPropertyValue("--drawer-width"));
+  localStorage.setItem(DRAWER_KEY,w.toString());
+});
+
+/* ============================================================
+   看板娘配置
+   ============================================================ */
+const KANBAN_KEY="dsh_launcher_kanban";
+const DEFAULT_KANBAN={enabled:true,width:340,opacity:0.38,position:"rb",avoid:false,customSrc:""};
+let kanbanCfg=loadKanban();
+function loadKanban(){try{return {...DEFAULT_KANBAN,...JSON.parse(localStorage.getItem(KANBAN_KEY)||"{}")}}catch(e){return {...DEFAULT_KANBAN}}}
+function saveKanban(){localStorage.setItem(KANBAN_KEY,JSON.stringify(kanbanCfg))}
+function applyKanban(){
+  const img=$("kanbanImg");
+  img.classList.toggle("hidden",!kanbanCfg.enabled);
+  img.classList.toggle("lb",kanbanCfg.position==="lb");
+  document.documentElement.style.setProperty("--kanban-width",kanbanCfg.width+"px");
+  document.documentElement.style.setProperty("--kanban-opacity",kanbanCfg.opacity);
+  document.documentElement.style.setProperty("--kanban-bottom",kanbanCfg.avoid?"64px":"24px");
+  if(kanbanCfg.customSrc)img.src=kanbanCfg.customSrc;
+  $("swKanban").classList.toggle("on",kanbanCfg.enabled);
+  $("kanbanSize").value=kanbanCfg.width;$("kanbanSizeVal").textContent=kanbanCfg.width+"px";
+  $("kanbanOpacity").value=Math.round(kanbanCfg.opacity*100);$("kanbanOpacityVal").textContent=kanbanCfg.opacity.toFixed(2);
+  $("kanbanPosition").value=kanbanCfg.position;
+  $("swKanbanAvoid").classList.toggle("on",kanbanCfg.avoid);
+}
+$("swKanban").onclick=function(){kanbanCfg.enabled=!kanbanCfg.enabled;saveKanban();applyKanban()};
+$("kanbanSize").oninput=function(){kanbanCfg.width=+this.value;$("kanbanSizeVal").textContent=this.value+"px";applyKanban()};
+$("kanbanSize").onchange=saveKanban;
+$("kanbanOpacity").oninput=function(){kanbanCfg.opacity=+this.value/100;$("kanbanOpacityVal").textContent=kanbanCfg.opacity.toFixed(2);applyKanban()};
+$("kanbanOpacity").onchange=saveKanban;
+$("kanbanPosition").onchange=function(){kanbanCfg.position=this.value;saveKanban();applyKanban()};
+$("swKanbanAvoid").onclick=function(){kanbanCfg.avoid=!kanbanCfg.avoid;saveKanban();applyKanban()};
+$("btnKanbanReset").onclick=function(){kanbanCfg={...DEFAULT_KANBAN};saveKanban();applyKanban();appendLog("[启动器] 看板娘已恢复默认设置","log-stop")};
+$("btnKanbanPick").onclick=async function(){
+  if(HAS_TAURI){const path=await invoke("pick_file",{filters:[{name:"图片",extensions:["png","jpg","jpeg"]}]});if(path){kanbanCfg.customSrc=path;saveKanban();applyKanban()}}
+  else{const input=document.createElement("input");input.type="file";input.accept="image/*";
+    input.onchange=e=>{const f=e.target.files[0];if(f){const r=new FileReader();r.onload=ev=>{kanbanCfg.customSrc=ev.target.result;saveKanban();applyKanban()};r.readAsDataURL(f)}};input.click()}
+};
+
+/* 开关通用绑定 */
+document.querySelectorAll(".switch").forEach(sw=>{
+  if(sw.id==="swKanban"||sw.id==="swKanbanAvoid")return;
+  sw.onclick=function(){this.classList.toggle("on")};
+});
+
+/* ============================================================
+   DSH 启停
+   ============================================================ */
+$("btnStart").onclick=async function(){
+  updateStatus(false,true);
+  const ep=currentEndpoint();
+  appendLog(`正在启动「${ep.name}」的 DSH 基座（端口 ${ep.port}）...`,"log-start");
+  try{
+    await invoke("start_harness",{workspace:$("workspaceInput").value,port:ep.port,endpoint_id:ep.id});
+    if(!HAS_TAURI){
+      setTimeout(()=>{
+        appendLog(`DSH Web 服务就绪：http://127.0.0.1:${ep.port}/`,"log-ready");
+        appendLog("自动加载 DSH 内置插件与已启用插件");
+        updateStatus(true,false);dshRunning=true;
+      },800);
+    }
+  }catch(e){appendLog("启动失败："+e,"log-error");updateStatus(false,false)}
+};
+$("btnStop").onclick=async function(){
+  appendLog("正在终止 DSH 所有子进程...");
+  try{await invoke("stop_harness",{endpoint_id:currentEndpoint().id});
+    if(!HAS_TAURI){setTimeout(()=>{appendLog("DSH 基座已完全停止","log-stop");updateStatus(false,false);dshRunning=false},600)}
+  }
+  catch(e){appendLog("停止异常："+e,"log-error")}
+};
+$("clearLog").onclick=()=>{$("logContent").innerHTML="";logLines=0;$("logLineCount").textContent="0"};
+$("openUrlLink").onclick=()=>invoke("open_browser",{endpoint_id:currentEndpoint().id});
+$("btnOpenBrowser").onclick=()=>invoke("open_browser",{endpoint_id:currentEndpoint().id});
+$("btnOpenLogDir").onclick=()=>invoke("open_logs_dir");
+$("btnOpenLogDir2").onclick=()=>invoke("open_logs_dir");
+$("btnHideTray").onclick=()=>invoke("hide_to_tray");
+$("btnPickWorkspace").onclick=async function(){
+  const p=await invoke("pick_workspace");
+  if(p){$("workspaceInput").value=p;$("workspacePath").textContent="工作区："+p;invoke("set_workspace",{path:p})}
+};
+
+/* ============================================================
+   会话管理
+   ============================================================ */
+async function loadSessions(){
+  const list=await invoke("list_sessions",{filter:($("sessionSearch")?.value||""),endpoint_id:currentEndpoint().id});
+  const box=$("sessionList");
+  if(!list||!list.length){box.innerHTML='<div class="session-empty" style="padding:20px;text-align:center;font-size:12px">当前端暂无会话记录</div>';return}
+  box.innerHTML="";
+  list.forEach(s=>{
+    const div=document.createElement("div");div.className="session-item";
+    div.innerHTML=`<div class="s-title">${s.title||"未命名会话"}</div>
+      <div class="s-meta">${s.workspace||""} · ${fmtTime(s.mtime_ms)} · ${(s.size/1024).toFixed(1)}KB</div>`;
+    div.onclick=()=>loadSessionDetail(s.id);
+    box.appendChild(div);
+  });
+}
+$("btnRefreshSessions")?.addEventListener("click",loadSessions);
+$("sessionSearch")?.addEventListener("keyup",e=>{if(e.key==="Enter")loadSessions()});
+$("btnDeleteSession")?.addEventListener("click",()=>{
+  if(!currentSessionId){showConfirm("删除会话","请先选择左侧要删除的会话。",()=>{});return}
+  showConfirm("删除会话","确定删除当前会话吗？会移入回收站，可恢复。",async()=>{
+    try{
+      await invoke("delete_session",{id:currentSessionId,endpoint_id:currentEndpoint().id});
+      currentSessionId=null;
+      $("sessionDetail").innerHTML='<div class="session-empty">会话已移入回收站</div>';
+      loadSessions();
+      appendLog("[会话] 已删除并移入回收站","log-stop");
+    }catch(e){appendLog("删除失败："+e,"log-error")}
+  });
+});
+async function loadSessionDetail(id){
+  currentSessionId=id;
+  document.querySelectorAll(".session-item").forEach((i,idx)=>i.classList.toggle("active",idx===Array.from($("sessionList").children).findIndex(x=>x===i)));
+  const blocks=await invoke("get_session",{id,endpoint_id:currentEndpoint().id});
+  const box=$("sessionDetail");
+  if(!blocks||!blocks.length){box.innerHTML='<div class="session-empty">无法加载会话内容</div>';return}
+  box.innerHTML=`<div style="margin-bottom:10px;font-size:12px;color:var(--text-secondary)">会话 ID：${id}（端：${currentEndpoint().name}）</div>`;
+  blocks.forEach(b=>{const d=document.createElement("div");d.className="msg "+(b.kind==="user"?"user":b.kind==="tool"?"tool":"assistant");d.textContent=b.text;box.appendChild(d)});
+}
+
+/* ============================================================
+   插件管理
+   ============================================================ */
+let pluginData=[];
+async function renderPlugins(){
+  pluginData=await invoke("list_plugins",{endpoint_id:currentEndpoint().id});
+  const kw=($("pluginSearch")?.value||"").toLowerCase();
+  const box=$("pluginList");box.innerHTML="";
+  if(!pluginData||!pluginData.length){box.innerHTML='<div class="session-empty">暂无插件</div>';return}
+  pluginData.filter(p=>!kw||p.name.toLowerCase().includes(kw)||p.id.toLowerCase().includes(kw)).forEach(p=>{
+    const card=document.createElement("div");card.className="cap-card";
+    card.innerHTML=`
+      <div class="cc-head">
+        <div><span class="cc-name">${p.name}</span><span class="cc-ver">v${p.version}</span>
+          <span class="cc-tag ${p.builtin?"tag-builtin":"tag-third"}">${p.builtin?"内置核心":"第三方"}</span></div>
+        <span class="status-badge ${p.enabled?"badge-on":"badge-off"}">${p.enabled?"已启用":"已禁用"}</span>
+      </div>
+      <div class="cc-desc">${p.desc}</div>
+      <div class="cc-meta">ID: ${p.id} · 作者: ${p.author}${p.skills&&p.skills.length?` · 技能: ${p.skills.join(", ")}`:""}</div>
+      <div class="cc-actions">
+        ${p.builtin?"":`<button class="btn-small" data-act="toggle" data-id="${p.id}">${p.enabled?"禁用":"启用"}</button>`}
+        <button class="btn-small" data-act="reload" data-id="${p.id}">重载</button>
+        <button class="btn-small" data-act="config" data-id="${p.id}">配置</button>
+        ${p.builtin?"":`<button class="btn-danger" data-act="uninstall" data-id="${p.id}">卸载</button>`}
+      </div>`;
+    box.appendChild(card);
+  });
+  box.querySelectorAll("button[data-act]").forEach(btn=>{
+    btn.onclick=async e=>{
+      e.stopPropagation();const id=btn.dataset.id,act=btn.dataset.act;
+      if(act==="toggle"){await invoke("toggle_plugin",{pid:id,enable:!pluginData.find(p=>p.id===id).enabled,endpoint_id:currentEndpoint().id});renderPlugins();appendLog(`[插件] ${id} 状态已切换`,"log-ready")}
+      else if(act==="reload"){await invoke("reload_plugin",{pid:id,endpoint_id:currentEndpoint().id});appendLog(`[插件] ${id} 已重载`,"log-ready")}
+      else if(act==="config"){const p=pluginData.find(x=>x.id===id);showConfirm("插件配置",`插件「${p.name}」配置面板（原型）。\n实际实现将根据插件 config.schema.json 自动渲染表单。\n\n当前配置项：\n- 启用状态：${p.enabled?"开启":"关闭"}\n- 版本：${p.version}`,()=>{})}
+      else if(act==="uninstall"){showConfirm("卸载插件",`确定要卸载插件「${id}」吗？此操作不可撤销。`,async()=>{await invoke("uninstall_plugin",{pid:id,endpoint_id:currentEndpoint().id});renderPlugins();appendLog(`[插件] ${id} 已卸载`,"log-error")})}
+    };
+  });
+}
+$("btnRefreshPlugin")?.addEventListener("click",renderPlugins);
+$("pluginSearch")?.addEventListener("input",renderPlugins);
+$("btnImportPlugin")?.addEventListener("click",()=>showConfirm("导入本地插件","选择本地插件文件夹进行安装（原型提示，实际调用文件选择器）。",()=>{}));
+
+/* 插件市场 */
+$("btnOpenMarket")?.addEventListener("click",async()=>{
+  const list=await invoke("get_market",{endpoint_id:currentEndpoint().id});
+  const body=$("marketBody");body.innerHTML="";
+  list.forEach(m=>{
+    const card=document.createElement("div");card.className="market-card";
+    card.innerHTML=`<div class="mc-head"><span class="mc-name">${m.name} <span style="font-size:11px;color:var(--text-secondary)">v${m.version}</span></span>
+      <button class="${m.installed?"btn-normal":"btn-primary"}" style="padding:4px 10px;font-size:12px" data-id="${m.id}" ${m.installed?"disabled":""}>${m.installed?"已安装":"安装"}</button></div>
+      <div class="mc-desc">${m.desc}</div><div class="mc-meta">作者：${m.author}</div>`;
+    body.appendChild(card);
+  });
+  body.querySelectorAll("button[data-id]").forEach(b=>{
+    b.onclick=async()=>{await invoke("install_market_plugin",{pid:b.dataset.id,endpoint_id:currentEndpoint().id});b.textContent="已安装";b.disabled=true;b.className="btn-normal";appendLog(`[市场] 已安装插件 ${b.dataset.id}`,"log-ready")};
+  });
+  $("marketModal").classList.add("show");
+});
+$("marketClose").onclick=()=>$("marketModal").classList.remove("show");
+
+/* ============================================================
+   Skill 管理
+   ============================================================ */
+let skillData=[];
+async function renderSkills(){
+  skillData=await invoke("list_skills",{endpoint_id:currentEndpoint().id});
+  const filter=$("skillFilter").value,onlyOn=$("skillOnlyEnabled").checked;
+  const box=$("skillList");
+  const sel=$("skillFilter");
+  if(sel.options.length<=1){[...new Set(skillData.map(s=>s.plugin))].forEach(p=>{const o=document.createElement("option");o.value=p;o.textContent=p;sel.appendChild(o)})}
+  box.innerHTML="";
+  if(!skillData||!skillData.length){box.innerHTML='<div class="session-empty">暂无技能</div>';return}
+  skillData.filter(s=>(!filter||s.plugin===filter)&&(!onlyOn||s.enabled)).forEach(s=>{
+    const card=document.createElement("div");card.className="cap-card";
+    card.innerHTML=`
+      <div class="cc-head">
+        <div><span class="cc-name">${s.name}</span><span class="cc-ver">${s.plugin}</span></div>
+        <span class="status-badge ${s.enabled?"badge-on":"badge-off"}">${s.enabled?"已启用":"已禁用"}</span>
+      </div>
+      <div class="cc-desc">${s.desc}</div>
+      <div class="cc-meta">ID: ${s.id} · 累计调用: ${s.calls} 次 · 入参: ${s.params} · 返回: ${s.returns}</div>
+      <div class="cc-actions">
+        <button class="btn-small" data-act="toggle" data-id="${s.id}">${s.enabled?"禁用":"启用"}</button>
+        <button class="btn-small" data-act="detail" data-id="${s.id}">详情</button>
+        <button class="btn-small" data-act="reset" data-id="${s.id}">重置统计</button>
+      </div>`;
+    box.appendChild(card);
+  });
+  box.querySelectorAll("button[data-act]").forEach(btn=>{
+    btn.onclick=e=>{
+      e.stopPropagation();const id=btn.dataset.id,act=btn.dataset.act,s=skillData.find(x=>x.id===id);
+      if(act==="toggle"){s.enabled=!s.enabled;appendLog(`[技能] ${id} 状态已切换`,"log-ready");renderSkills()}
+      else if(act==="detail"){showConfirm("技能详情",`名称：${s.name}\n所属插件：${s.plugin}\n说明：${s.desc}\n入参：${s.params}\n返回：${s.returns}\n累计调用：${s.calls} 次`,()=>{})}
+      else if(act==="reset"){showConfirm("重置统计",`确定要重置技能「${s.name}」的调用统计吗？`,()=>{s.calls=0;renderSkills()})}
+    };
+  });
+}
+$("skillFilter")?.addEventListener("change",renderSkills);
+$("skillOnlyEnabled")?.addEventListener("change",renderSkills);
+
+/* ============================================================
+   MCP 管理
+   ============================================================ */
+let mcpData=[];
+async function renderMcp(){
+  mcpData=await invoke("list_mcp",{endpoint_id:currentEndpoint().id});
+  const box=$("mcpList");box.innerHTML="";
+  if(!mcpData||!mcpData.length){box.innerHTML='<div class="session-empty">暂无 MCP 服务</div>';return}
+  mcpData.forEach(m=>{
+    const card=document.createElement("div");card.className="cap-card";
+    const badgeCls=m.status==="connected"?"badge-on":m.status==="error"?"badge-err":"badge-off";
+    const badgeTxt=m.status==="connected"?"已连接":m.status==="error"?"连接异常":"未连接";
+    card.innerHTML=`
+      <div class="cc-head">
+        <div><span class="cc-name">${m.name}</span><span class="cc-ver">${m.protocol.toUpperCase()}</span></div>
+        <span class="status-badge ${badgeCls}">${badgeTxt}</span>
+      </div>
+      <div class="cc-desc">${m.desc}</div>
+      <div class="cc-meta">ID: ${m.id} · 端口: ${m.port} · 地址: ${m.url}</div>
+      <div class="cc-actions">
+        <button class="btn-small" data-act="toggle" data-id="${m.id}">${m.status==="connected"?"断开":"连接"}</button>
+        <button class="btn-small" data-act="test" data-id="${m.id}">测试连接</button>
+        <button class="btn-small" data-act="config" data-id="${m.id}">配置</button>
+        <button class="btn-danger" data-act="remove" data-id="${m.id}">删除</button>
+      </div>`;
+    box.appendChild(card);
+  });
+  box.querySelectorAll("button[data-act]").forEach(btn=>{
+    btn.onclick=e=>{
+      e.stopPropagation();const id=btn.dataset.id,act=btn.dataset.act,m=mcpData.find(x=>x.id===id);
+      if(act==="toggle"){m.status=m.status==="connected"?"disconnected":"connected";renderMcp();appendLog(`[MCP] ${id} ${m.status==="connected"?"已连接":"已断开"}`,"log-ready")}
+      else if(act==="test"){appendLog(`[MCP] 测试 ${id} 连接...`,"log-start");setTimeout(()=>{appendLog(`[MCP] ${id} 连接${m.status==="connected"?"正常":"失败"}`,m.status==="connected"?"log-ready":"log-error")},500)}
+      else if(act==="config"){showConfirm("MCP 配置",`服务「${m.name}」配置面板（原型）。\n协议：${m.protocol}\n地址：${m.url}\n端口：${m.port}`,()=>{})}
+      else if(act==="remove"){showConfirm("删除 MCP",`确定要删除 MCP 服务「${m.name}」吗？`,()=>{mcpData=mcpData.filter(x=>x.id!==id);renderMcp();appendLog(`[MCP] ${id} 已删除`,"log-error")})}
+    };
+  });
+}
+$("btnAddMcp")?.addEventListener("click",()=>showConfirm("添加 MCP","填写 MCP 服务名称、协议、地址（原型提示，实际将弹出表单）。",()=>{}));
+$("btnRefreshMcp")?.addEventListener("click",renderMcp);
+$("btnTestAllMcp")?.addEventListener("click",()=>{appendLog("[MCP] 正在测试全部连接...","log-start");setTimeout(()=>appendLog("[MCP] 全部连接测试完成","log-ready"),600)});
+
+/* ============================================================
+   运行与用量
+   ============================================================ */
+function refreshUsage(){
+  $("usageToken").textContent="待接入";
+  $("usageSession").textContent="待接入";
+  $("usagePlugin").textContent="待接入";
+  $("barToken").style.width="0%";
+  $("barSession").style.width="0%";
+  $("barPlugin").style.width="0%";
+}
+$("btnRefreshUsage")?.addEventListener("click",refreshUsage);
+$("btnExportUsage")?.addEventListener("click",()=>appendLog("[用量] 用量记录已导出","log-ready"));
+["limitToken","limitSession","limitDaily"].forEach(id=>{const el=$(id);if(!el)return;el.oninput=function(){$(id+"Val").textContent=(+this.value).toLocaleString()}});
+
+/* ============================================================
+   数据与维护
+   ============================================================ */
+document.querySelectorAll(".action-grid button[data-open]").forEach(btn=>{
+  btn.onclick=()=>{
+    const map={sessions:"打开 DSH 会话目录",plugins:"打开插件安装目录",settings:"打开 DSH 配置文件",logs:"打开启动器日志目录",dshhome:"打开 DSH_HOME",trash:"打开会话回收站"};
+    appendLog(`[维护] ${map[btn.dataset.open]}（端：${currentEndpoint().name}）`,"log-stop");
+    if(HAS_TAURI)invoke("open_path",{path:btn.dataset.open,endpoint_id:currentEndpoint().id});
+  };
+});
+$("btnExportConfig")?.addEventListener("click",()=>{
+  const scope=[$("expLauncher").checked&&"launcher",$("expDsh").checked&&"dsh",$("expEndpoints").checked&&"endpoints"].filter(Boolean).join("+");
+  appendLog(`[维护] 配置已导出（范围：${scope}）`,"log-ready");
+});
+$("btnImportConfig")?.addEventListener("click",()=>showConfirm("导入配置","选择配置文件，将以合并方式导入（保留现有配置）。",()=>appendLog("[维护] 配置已导入","log-ready")));
+$("btnResetUI")?.addEventListener("click",()=>showConfirm("重置外观与偏好","确定要重置启动器外观与偏好设置吗？看板娘、窗口、启动行为将恢复默认。",()=>{kanbanCfg={...DEFAULT_KANBAN};saveKanban();applyKanban();appendLog("[维护] 外观与偏好已重置","log-stop")}));
+$("btnResetEndpoints")?.addEventListener("click",()=>showConfirm("重置多端列表","确定要重置多端列表吗？将恢复默认的本地 Windows 端，其他端从列表移除（不删除端上的数据）。",()=>{endpoints=JSON.parse(JSON.stringify(DEFAULT_ENDPOINTS));saveEndpoints();renderEndpointList();updateEndpointUI();appendLog("[维护] 多端列表已重置","log-stop")}));
+$("btnResetDsh")?.addEventListener("click",()=>showConfirm("重置当前端 DSH 配置",`确定要重置「${currentEndpoint().name}」的 DSH 插件/技能/MCP 配置吗？此操作需重启 DSH 生效。`,()=>appendLog("[维护] 当前端 DSH 配置已重置","log-stop")));
+$("btnResetAll")?.addEventListener("click",()=>showConfirm("重置全部配置","确定要重置全部配置吗？此操作不可撤销，所有设置将恢复默认。",()=>{kanbanCfg={...DEFAULT_KANBAN};saveKanban();applyKanban();endpoints=JSON.parse(JSON.stringify(DEFAULT_ENDPOINTS));saveEndpoints();renderEndpointList();updateEndpointUI();appendLog("[维护] 全部配置已重置","log-error")}));
+
+/* ============================================================
+   初始化
+   ============================================================ */
+applyKanban();
+updateEndpointUI();
+updateStatus(false,false);
+appendLog("DSH Desktop 启动器已就绪","log-ready");
+appendLog(`当前端：${currentEndpoint().name}（${typeLabel(currentEndpoint().type)}）`,"log-stop");
+appendLog("提示：点击顶部端名称可快速切换端；点击「设置」可配置看板娘、多端、用量等","log-stop");
+
+if(HAS_TAURI&&window.__TAURI__.event){
+  window.__TAURI__.event.listen("harness-log",e=>{
+    const {level,text}=e.payload;
+    const cls=level==="err"?"log-error":level==="ready"?"log-ready":"";
+    appendLog(text,cls);
+  });
+  window.__TAURI__.event.listen("harness-status",e=>{
+    const {status}=e.payload;
+    if(status==="ready"){dshRunning=true;updateStatus(true,false)}
+    else if(status==="starting")updateStatus(false,true);
+    else{dshRunning=false;updateStatus(false,false)}
+  });
+}
+
+// 初始化：用真实后端状态回填本地端信息
+(async function initState(){
+  try{
+    const s=await invoke("get_state");
+    const ep=currentEndpoint();
+    if(s){
+      if(s.workspace){ep.workspace=s.workspace;$("workspaceInput").value=s.workspace;$("workspacePath").textContent="工作区："+s.workspace}
+      if(s.dsh_home){ep.dshHome=s.dsh_home}
+      if(s.dsh_path){ep.path=s.dsh_path}
+      if(s.url){$("urlInput").value=s.url;$("openUrlLink").textContent=s.url}
+      if(s.port){ep.port=s.port}
+      saveEndpoints();
+      if(s.status==="ready"){dshRunning=true;updateStatus(true,false)}
+      else if(s.status==="starting"){updateStatus(false,true)}
+    }
+  }catch(e){appendLog("初始化状态失败："+e,"log-error")}
+  try{const sessions=await invoke("list_sessions",{filter:""});appendLog("自检: 会话 "+(sessions?sessions.length:0)+" 个","log-stop")}catch(e){}
+})();
+</script>
 </body>
 </html>

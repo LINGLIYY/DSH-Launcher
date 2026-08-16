@@ -1,5 +1,6 @@
 mod harness;
 mod sessions;
+mod capabilities;
 
 use serde::Serialize;
 use std::collections::VecDeque;
@@ -149,8 +150,48 @@ async fn pick_workspace(app: AppHandle) -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
+async fn pick_file(app: AppHandle, _filters: Option<serde_json::Value>) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    Ok(app
+        .dialog()
+        .file()
+        .blocking_pick_file()
+        .and_then(|p| p.into_path().ok())
+        .map(|p| p.to_string_lossy().into_owned()))
+}
+
+#[tauri::command]
+fn open_path(path: String) -> Result<(), String> {
+    let home = default_dsh_home();
+    let dir = match path.as_str() {
+        "sessions" => format!("{}\\sessions", home),
+        "plugins" => format!("{}\\profiles\\web\\plugins", home),
+        "logs" => default_logs_dir(),
+        "trash" => format!("{}\\sessions_trash", home),
+        // settings / dshhome / 其他：统一打开 DSH_HOME 根目录
+        _ => home.clone(),
+    };
+    harness::open_path(std::path::Path::new(&dir))
+}
+
+#[tauri::command]
 fn list_sessions(filter: Option<String>) -> Result<Vec<sessions::SessionInfo>, String> {
     Ok(sessions::list(filter.unwrap_or_default().as_str()))
+}
+
+#[tauri::command]
+fn list_plugins() -> Vec<capabilities::PluginInfo> {
+    capabilities::list_plugins()
+}
+
+#[tauri::command]
+fn list_skills() -> Vec<capabilities::SkillInfo> {
+    capabilities::list_skills()
+}
+
+#[tauri::command]
+fn list_mcp() -> Vec<capabilities::McpInfo> {
+    capabilities::list_mcp()
 }
 
 #[tauri::command]
@@ -276,9 +317,14 @@ pub fn run() {
             hide_to_tray,
             set_workspace,
             pick_workspace,
+            pick_file,
+            open_path,
             list_sessions,
             get_session,
             delete_session,
+            list_plugins,
+            list_skills,
+            list_mcp,
         ])
         .run(tauri::generate_context!())
         .expect("error while running DSH Desktop");
