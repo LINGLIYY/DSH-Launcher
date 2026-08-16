@@ -21,20 +21,24 @@ from pathlib import Path
 APP_NAME = "DSH Desktop"
 POLL_MS = 200
 
-# 暗色主题
-BG = "#0f1115"
-PANEL = "#161b22"
-CARD = "#1c2128"
-ELEVATED = "#262c36"
-INPUT_BG = "#14171c"
-BORDER = "#2d333b"
-FG = "#e6edf3"
-MUT = "#8b949e"
-ACCENT = "#4d6bfe"
-OK = "#2ea043"
-WARN = "#d29922"
-ERR = "#f85149"
-INFO = "#58a6ff"
+# 浅蓝 + 白主题（基于 Kimi 排版评审建议）
+BG = "#F1F5F9"
+PANEL = "#FFFFFF"
+CARD = "#FFFFFF"
+ELEVATED = "#EFF6FF"
+INPUT_BG = "#F8FAFC"
+BORDER = "#E2E8F0"
+FG = "#1E293B"
+MUT = "#64748B"
+ACCENT = "#2563EB"
+ACCENT_DARK = "#1D4ED8"
+ACCENT_LIGHT = "#EFF6FF"
+OK = "#059669"
+WARN = "#D97706"
+ERR = "#DC2626"
+INFO = "#2563EB"
+LOG_FG = "#334155"
+STATUS_BG = "#E8EDF3"
 
 
 class HarnessManager:
@@ -194,21 +198,32 @@ def _setup_styles(root):
     style.configure(
         "TButton",
         background=PANEL,
-        foreground=FG,
-        bordercolor=CARD,
+        foreground="#475569",
+        bordercolor=BORDER,
         focuscolor=PANEL,
-        padding=(10, 4),
+        padding=(14, 6),
+        relief="flat",
     )
-    style.map("TButton", background=[("active", "#21262d"), ("disabled", "#161b22")])
+    style.map("TButton", background=[("active", BG), ("disabled", "#F8FAFC")])
     style.configure(
         "Accent.TButton",
         background=ACCENT,
         foreground="#ffffff",
         bordercolor=ACCENT,
-        padding=(10, 4),
+        padding=(16, 6),
+        relief="flat",
     )
-    style.map("Accent.TButton", background=[("active", "#3d59e0"), ("disabled", "#2a3350")])
-    style.configure("TEntry", fieldbackground=PANEL, foreground=FG, insertcolor=FG)
+    style.map("Accent.TButton", background=[("active", ACCENT_DARK), ("disabled", "#BFDBFE")])
+    style.configure(
+        "Danger.TButton",
+        background=PANEL,
+        foreground=ERR,
+        bordercolor="#FECACA",
+        padding=(14, 6),
+        relief="flat",
+    )
+    style.map("Danger.TButton", background=[("active", "#FEF2F2"), ("disabled", "#F8FAFC")])
+    style.configure("TEntry", fieldbackground=INPUT_BG, foreground=FG, insertcolor=FG, bordercolor=BORDER)
     style.configure(
         "TNotebook",
         background=BG,
@@ -217,12 +232,12 @@ def _setup_styles(root):
     )
     style.configure(
         "TNotebook.Tab",
-        background=PANEL,
+        background=BG,
         foreground=MUT,
-        padding=(14, 6),
+        padding=(20, 8),
         borderwidth=0,
     )
-    style.map("TNotebook.Tab", background=[("selected", CARD)], foreground=[("selected", FG)])
+    style.map("TNotebook.Tab", background=[("selected", CARD)], foreground=[("selected", ACCENT)])
     style.configure(
         "Treeview",
         background=CARD,
@@ -233,12 +248,12 @@ def _setup_styles(root):
     )
     style.configure(
         "Treeview.Heading",
-        background=PANEL,
+        background="#F8FAFC",
         foreground=MUT,
         bordercolor=CARD,
         padding=(6, 4),
     )
-    style.map("Treeview", background=[("selected", ELEVATED)], foreground=[("selected", FG)])
+    style.map("Treeview", background=[("selected", ACCENT_LIGHT)], foreground=[("selected", ACCENT)])
 
 
 def _file_log(log_path, msg):
@@ -271,10 +286,10 @@ class SessionsPanel:
         ttk.Button(toolbar, text="刷新", command=self.refresh).pack(side="left")
         ttk.Button(toolbar, text="删除会话（进备份）", command=self._confirm_delete).pack(side="left", padx=(6, 0))
         ttk.Button(toolbar, text="打开备份目录", command=self._open_trash).pack(side="left", padx=(6, 0))
-        ttk.Label(toolbar, text="搜索").pack(side="left", padx=(16, 4))
         self.search_var = tk.StringVar()
         search_entry = ttk.Entry(toolbar, textvariable=self.search_var, width=26)
-        search_entry.pack(side="left")
+        search_entry.pack(side="right")
+        ttk.Label(toolbar, text="搜索").pack(side="right", padx=(0, 4))
         search_entry.bind("<Return>", lambda e: self.refresh())
 
         paned = ttk.Panedwindow(frame, orient="horizontal")
@@ -288,10 +303,11 @@ class SessionsPanel:
         self.tree.column("time", width=130, anchor="w")
         self.tree.column("size", width=80, anchor="e")
         self.tree.bind("<<TreeviewSelect>>", self._on_select)
-        paned.add(self.tree, weight=2)
+        self.tree.column("#0", minwidth=280, width=300)
+        paned.add(self.tree, weight=1)
 
-        self.view = tk.Text(paned, bg=CARD, fg=FG, wrap="word", relief="flat", padx=10, pady=8)
-        self.view.tag_configure("user", foreground="#58a6ff", spacing1=8)
+        self.view = tk.Text(paned, bg=CARD, fg=FG, wrap="word", relief="flat", padx=16, pady=12)
+        self.view.tag_configure("user", foreground=INFO, spacing1=8)
         self.view.tag_configure("assistant", foreground=FG, spacing1=8)
         self.view.tag_configure("tool", foreground=WARN, spacing1=4)
         self.view.tag_configure("result", foreground=MUT, spacing1=4)
@@ -299,7 +315,7 @@ class SessionsPanel:
         self.view.tag_configure("h1", foreground=MUT, spacing1=2)
         sb = ttk.Scrollbar(self.view, command=self.view.yview)
         self.view.configure(yscrollcommand=sb.set)
-        paned.add(self.view, weight=3)
+        paned.add(self.view, weight=2)
 
         bottom = ttk.Frame(frame)
         bottom.pack(fill="x", padx=8, pady=(0, 8))
@@ -393,10 +409,10 @@ class SessionsPanel:
         self.view.delete("1.0", "end")
         for kind, text in rendered:
             prefix = {
-                "user": "👤 用户\n",
-                "assistant": "🤖 助手\n",
-                "tool": "🔧 工具调用\n",
-                "result": "📦 工具结果\n",
+                "user": "用户\n",
+                "assistant": "助手\n",
+                "tool": "工具调用\n",
+                "result": "工具结果\n",
                 "info": "",
                 "error": "",
             }.get(kind, "")
@@ -462,32 +478,48 @@ class ControlWindow:
             pass
         _setup_styles(self.root)
 
-        header = ttk.Frame(self.root, padding=(14, 10))
+        header = ttk.Frame(self.root, padding=(20, 14))
         header.pack(fill="x")
-        ttk.Label(header, text="DSH Desktop", font=("Microsoft YaHei UI", 15, "bold")).pack(side="left")
+        ttk.Label(header, text="DSH Desktop", font=("Microsoft YaHei UI", 14, "bold")).pack(side="left")
+        status_frame = ttk.Frame(header)
+        status_frame.pack(side="right")
+        self.status_dot = tk.Canvas(status_frame, width=10, height=10, bg=BG, highlightthickness=0)
+        self.status_dot.pack(side="left", padx=(0, 6))
         self.status_var = tk.StringVar(value="已停止")
-        self.status_label = ttk.Label(header, textvariable=self.status_var, font=("Microsoft YaHei UI", 10, "bold"))
-        self.status_label.pack(side="right")
+        self.status_label = ttk.Label(status_frame, textvariable=self.status_var, font=("Microsoft YaHei UI", 12))
+        self.status_label.pack(side="left")
+        self._paint_dot("stopped")
 
-        strip = ttk.Frame(self.root, style="Card.TFrame", padding=(14, 6))
-        strip.pack(fill="x")
-        ttk.Label(strip, text="📁 工作区", style="Card.TLabel").pack(side="left")
-        self.ws_label = ttk.Label(strip, text=mgr.workspace, style="Card.TLabel")
-        self.ws_label.pack(side="left", padx=(6, 0))
-        ttk.Label(strip, text="🌐", style="Card.TLabel").pack(side="right", padx=(0, 4))
-        self.url_label = ttk.Label(strip, text=mgr.url, style="Info.TLabel", cursor="hand2")
-        self.url_label.pack(side="right")
+        strip = tk.Frame(self.root, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
+        strip.pack(fill="x", padx=20, pady=(0, 16))
+        tk.Label(strip, text="工作区", bg=CARD, fg=MUT, font=("Microsoft YaHei UI", 12)).pack(side="left", padx=(16, 8), pady=10)
+        self.ws_label = tk.Label(strip, text=mgr.workspace, bg=CARD, fg=FG, font=("Microsoft YaHei UI", 12), anchor="w")
+        self.ws_label.pack(side="left", fill="x", expand=True, pady=10)
+        self.url_label = tk.Label(strip, text=mgr.url, bg=CARD, fg=INFO, font=("Microsoft YaHei UI", 12), cursor="hand2")
+        self.url_label.pack(side="right", padx=16, pady=10)
         self.url_label.bind("<Button-1>", lambda e: self._do("open"))
 
+        footer = tk.Frame(self.root, bg=STATUS_BG, height=28)
+        footer.pack(fill="x", side="bottom", padx=20, pady=(12, 0))
+        footer.pack_propagate(False)
+        self.foot_var = tk.StringVar(value="")
+        tk.Label(footer, textvariable=self.foot_var, bg=STATUS_BG, fg="#475569", font=("Microsoft YaHei UI", 11)).pack(
+            side="left", padx=16
+        )
+        self.stats_var = tk.StringVar(value="")
+        tk.Label(footer, textvariable=self.stats_var, bg=STATUS_BG, fg="#475569", font=("Microsoft YaHei UI", 11)).pack(
+            side="right", padx=16
+        )
+
         self.notebook = ttk.Notebook(self.root)
-        self.notebook.pack(fill="both", expand=True, padx=10, pady=(0, 8))
+        self.notebook.pack(fill="both", expand=True, padx=20, pady=(0, 8))
 
         console_tab = ttk.Frame(self.notebook)
-        self.notebook.add(console_tab, text=" 控制台 ")
+        self.notebook.add(console_tab, text="控制台")
         self._build_console_tab(console_tab)
 
         sessions_tab = ttk.Frame(self.notebook)
-        self.notebook.add(sessions_tab, text=" 会话管理 ")
+        self.notebook.add(sessions_tab, text="会话管理")
         if sessions_root is not None:
             self.sessions_panel = SessionsPanel(
                 sessions_tab,
@@ -500,58 +532,100 @@ class ControlWindow:
             ttk.Label(sessions_tab, text="未指定会话目录").pack(pady=20)
             self.sessions_panel = None
 
-        footer = ttk.Frame(self.root, padding=(14, 6))
-        footer.pack(fill="x")
-        self.foot_var = tk.StringVar(value="")
-        ttk.Label(footer, textvariable=self.foot_var, style="Muted.TLabel").pack(side="left")
-        self.stats_var = tk.StringVar(value="")
-        ttk.Label(footer, textvariable=self.stats_var, style="Muted.TLabel").pack(side="right")
-
         self.root.protocol("WM_DELETE_WINDOW", self.hide)
         self.root.after(POLL_MS, self._poll)
         self._set_status_style()
+
+    def _paint_dot(self, status):
+        import tkinter as tk
+
+        color = {
+            "ready": OK,
+            "starting": WARN,
+            "error": ERR,
+            "stopped": "#94A3B8",
+        }.get(status, "#94A3B8")
+        self.status_dot.delete("dot")
+        self.status_dot.create_oval(1, 1, 9, 9, fill=color, outline="", tags="dot")
 
     def _build_console_tab(self, parent):
         import tkinter as tk
         from tkinter import scrolledtext, ttk
 
-        card = ttk.Frame(parent, style="Card.TFrame", padding=12)
-        card.pack(fill="both", expand=True, padx=8, pady=8)
+        card = tk.Frame(parent, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
+        card.pack(fill="x", pady=(0, 16))
+        card.columnconfigure(1, weight=1)
 
-        ttk.Label(card, text="工作区目录", style="Card.TLabel").grid(row=0, column=0, sticky="w")
+        tk.Label(card, text="工作区目录", bg=CARD, fg=MUT, font=("Microsoft YaHei UI", 12), anchor="e", width=10).grid(
+            row=0, column=0, sticky="e", padx=(16, 12), pady=(14, 6)
+        )
         self.workspace_var = tk.StringVar(value=self.mgr.workspace)
-        ttk.Entry(card, textvariable=self.workspace_var).grid(row=0, column=1, sticky="we", padx=(8, 0))
-        ttk.Button(card, text="浏览…", command=self._browse_workspace).grid(row=0, column=2, padx=(6, 0))
+        tk.Entry(
+            card,
+            textvariable=self.workspace_var,
+            bg=INPUT_BG,
+            fg=FG,
+            relief="flat",
+            highlightbackground=BORDER,
+            highlightthickness=1,
+            font=("Microsoft YaHei UI", 12),
+        ).grid(row=0, column=1, sticky="we", pady=(14, 6))
+        ttk.Button(card, text="浏览…", command=self._browse_workspace).grid(row=0, column=2, padx=(10, 16), pady=(14, 6))
 
-        ttk.Label(card, text="地址", style="Card.TLabel").grid(row=1, column=0, sticky="w", pady=(8, 0))
+        tk.Label(card, text="地址", bg=CARD, fg=MUT, font=("Microsoft YaHei UI", 12), anchor="e", width=10).grid(
+            row=1, column=0, sticky="e", padx=(16, 12), pady=(6, 8)
+        )
         self.url_var = tk.StringVar(value=self.mgr.url)
-        ttk.Entry(card, textvariable=self.url_var, state="readonly").grid(row=1, column=1, sticky="we", padx=(8, 0), pady=(8, 0))
-        ttk.Button(card, text="打开", command=lambda: self._do("open")).grid(row=1, column=2, padx=(6, 0), pady=(8, 0))
+        tk.Entry(
+            card,
+            textvariable=self.url_var,
+            state="readonly",
+            bg=INPUT_BG,
+            fg=FG,
+            relief="flat",
+            highlightbackground=BORDER,
+            highlightthickness=1,
+            font=("Microsoft YaHei UI", 12),
+        ).grid(row=1, column=1, sticky="we", pady=(6, 8))
+        ttk.Button(card, text="打开", command=lambda: self._do("open")).grid(row=1, column=2, padx=(10, 16), pady=(6, 8))
 
-        btns = ttk.Frame(card, style="Card.TFrame")
-        btns.grid(row=2, column=0, columnspan=2, sticky="w", pady=(12, 4))
+        btns = tk.Frame(card, bg=CARD)
+        btns.grid(row=2, column=0, columnspan=3, sticky="w", padx=16, pady=(10, 16))
         self.start_btn = ttk.Button(btns, text="启动 Harness", style="Accent.TButton", command=lambda: self._do("start"))
         self.start_btn.pack(side="left")
-        self.stop_btn = ttk.Button(btns, text="停止 Harness", command=lambda: self._do("stop"))
-        self.stop_btn.pack(side="left", padx=(6, 0))
-        ttk.Button(btns, text="打开浏览器", command=lambda: self._do("open")).pack(side="left", padx=(6, 0))
-        ttk.Button(btns, text="打开日志目录", command=lambda: self._do("logs")).pack(side="left", padx=(6, 0))
-        ttk.Button(btns, text="隐藏到托盘", command=lambda: self._do("hide")).pack(side="right")
+        self.stop_btn = ttk.Button(btns, text="停止 Harness", style="Danger.TButton", command=lambda: self._do("stop"))
+        self.stop_btn.pack(side="left", padx=(16, 0))
+        ttk.Button(btns, text="打开浏览器", command=lambda: self._do("open")).pack(side="left", padx=(16, 0))
+        ttk.Button(btns, text="打开日志目录", command=lambda: self._do("logs")).pack(side="left", padx=(8, 0))
+        ttk.Button(btns, text="隐藏到托盘", command=lambda: self._do("hide")).pack(side="left", padx=(8, 0))
 
-        log_card = ttk.Frame(parent, style="Card.TFrame", padding=8)
-        log_card.pack(fill="both", expand=True, padx=8, pady=(0, 8))
-        self.log_text = scrolledtext.ScrolledText(log_card, bg=INPUT_BG, fg=MUT, relief="flat", wrap="word", height=14)
+        log_row = tk.Frame(parent, bg=BG)
+        log_row.pack(fill="both", expand=True)
+        log_card = tk.Frame(log_row, bg=CARD, highlightbackground=BORDER, highlightthickness=1)
+        log_card.pack(side="left", fill="both", expand=True)
+        self.log_text = scrolledtext.ScrolledText(
+            log_card, bg=INPUT_BG, fg=LOG_FG, relief="flat", wrap="word", font=("Consolas", 11), padx=12, pady=12
+        )
         self.log_text.tag_configure("ok", foreground=OK)
         self.log_text.tag_configure("warn", foreground=WARN)
         self.log_text.tag_configure("err", foreground=ERR)
-        self.log_text.tag_configure("info", foreground=MUT)
-        self.log_text.pack(fill="both", expand=True)
-        log_bar = ttk.Frame(log_card, style="Card.TFrame")
-        log_bar.pack(fill="x", pady=(6, 0))
+        self.log_text.tag_configure("info", foreground="#64748B")
+        self.log_text.pack(side="left", fill="both", expand=True, padx=(12, 0), pady=12)
+        log_bar = tk.Frame(log_card, bg=CARD)
+        log_bar.pack(side="bottom", fill="x", padx=12, pady=(0, 10))
         ttk.Button(log_bar, text="清空日志", command=self._clear_log).pack(side="left")
         self.log_count_var = tk.StringVar(value="")
-        ttk.Label(log_bar, textvariable=self.log_count_var, style="Muted.TLabel").pack(side="right")
-        card.columnconfigure(1, weight=1)
+        tk.Label(log_bar, textvariable=self.log_count_var, bg=CARD, fg=MUT, font=("Microsoft YaHei UI", 11)).pack(
+            side="right"
+        )
+
+        kanban_photo = self._load_kanban()
+        if kanban_photo is not None:
+            self.kanban_photo = kanban_photo
+            mascot = tk.Frame(log_row, bg=BG, width=160)
+            mascot.pack(side="right", fill="y")
+            mascot.pack_propagate(False)
+            tk.Label(mascot, image=kanban_photo, bg=BG).place(relx=0.5, rely=1.0, anchor="s", y=-14)
 
     def _browse_workspace(self):
         import tkinter.filedialog as fd
@@ -569,6 +643,29 @@ class ControlWindow:
         self.log_text.delete("1.0", "end")
         self.log_text.config(state="disabled")
         self.log_count_var.set("")
+
+    def _load_kanban(self):
+        """加载看板娘图片，透明区域压平到窗口背景色，用于背景装饰列。"""
+        candidates = [
+            Path(os.environ.get("USERPROFILE", "")) / "Pictures" / "ai生成" / "Dsh启动器看板娘" / "看板娘.png",
+            Path(os.environ.get("USERPROFILE", "")) / "Pictures" / "看板娘.png",
+        ]
+        path = next((p for p in candidates if p.exists()), None)
+        if path is None:
+            return None
+        try:
+            from PIL import Image, ImageTk
+
+            img = Image.open(path).convert("RGBA")
+            target_h = 240
+            ratio = target_h / img.height
+            img = img.resize((max(1, int(img.width * ratio)), target_h), Image.LANCZOS)
+            rgb = tuple(int(BG[i : i + 2], 16) for i in (1, 3, 5)) + (255,)
+            base = Image.new("RGBA", img.size, rgb)
+            base.alpha_composite(img)
+            return ImageTk.PhotoImage(base)
+        except Exception:
+            return None
 
     def _notify(self, payload):
         if isinstance(payload, tuple) and payload and payload[0] == "session_view":
@@ -595,15 +692,16 @@ class ControlWindow:
             "ready": OK,
             "starting": WARN,
             "error": ERR,
-            "stopped": MUT,
-        }.get(self.mgr.status, MUT)
+            "stopped": "#94A3B8",
+        }.get(self.mgr.status, "#94A3B8")
         text = {
-            "ready": "● 运行中（就绪）",
-            "starting": "● 正在启动…",
-            "error": "● 异常 / 超时",
-            "stopped": "● 已停止",
+            "ready": "运行中",
+            "starting": "正在启动…",
+            "error": "异常 / 超时",
+            "stopped": "已停止",
         }.get(self.mgr.status, self.mgr.status)
         self.status_var.set(text)
+        self._paint_dot(self.mgr.status)
         self.status_label.configure(foreground=color)
         running = self.mgr.is_running() or self.mgr.status in ("starting", "ready")
         busy = self.mgr.busy
@@ -611,10 +709,10 @@ class ControlWindow:
         self.stop_btn.config(state="normal" if running and not busy else "disabled")
         self.ws_label.config(text=self.mgr.workspace)
         if self.sessions_panel is not None:
-            self.stats_var.set(f"会话 {len(self.sessions_panel.sessions)} 个")
-        self.foot_var.set(
-            f"数据目录 {self.mgr.dsh_home} · dsh {self.mgr.dsh} · 端口 {self.mgr.port}"
-        )
+            self.stats_var.set(f"端口 {self.mgr.port}  |  会话 {len(self.sessions_panel.sessions)} 个")
+        else:
+            self.stats_var.set(f"端口 {self.mgr.port}")
+        self.foot_var.set(f"数据目录 {self.mgr.dsh_home}  |  dsh {self.mgr.dsh}")
 
     def _refresh_log(self):
         def tag_for(line):
