@@ -254,6 +254,7 @@ body{background:var(--bg-window);overflow:hidden;position:relative;height:100vh}
 .market-box .mb-toolbar{display:flex;flex-wrap:wrap;gap:8px;padding:10px 16px;border-bottom:1px solid var(--border-color)}
 .market-box .mb-toolbar input{flex:1;padding:6px 8px;border:1px solid var(--border-color);border-radius:3px;font-size:12px}
 .market-box .mb-toolbar select{padding:6px 8px;border:1px solid var(--border-color);border-radius:3px;font-size:12px;max-width:180px}
+.market-box .mb-toolbar .btn-small.active{background:var(--primary-blue);color:#fff;border-color:var(--primary-blue)}
 .market-box .mb-body{flex:1;overflow-y:auto;overflow-x:hidden;padding:12px 16px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-content:start;min-width:0}
 .market-empty{grid-column:1/-1;text-align:center;padding:24px 12px;color:var(--text-secondary);font-size:12px}
 .market-card{border:1px solid var(--border-color);border-radius:6px;padding:10px;background:#fff;min-width:0}
@@ -548,6 +549,9 @@ body{background:var(--bg-window);overflow:hidden;position:relative;height:100vh}
     </div>
     <div class="mb-toolbar">
       <input type="text" id="marketSearch" placeholder="搜索插件名称 / 作者 / 说明...">
+      <button class="btn-small" id="btnMarketSearch" title="搜索" aria-label="搜索" style="display:inline-flex;align-items:center;justify-content:center;width:32px;padding:5px;flex:none">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.5" y2="16.5"></line></svg>
+      </button>
       <select id="marketCategory"><option value="">全部分类</option></select>
       <select id="marketStatus">
         <option value="">全部状态</option>
@@ -560,11 +564,12 @@ body{background:var(--bg-window);overflow:hidden;position:relative;height:100vh}
         <option value="github">GitHub</option>
       </select>
       <select id="marketSort">
-        <option value="">默认排序</option>
+        <option value="combo" selected>综合</option>
         <option value="stars">星标最多</option>
         <option value="name">名称排序</option>
         <option value="added">最近添加</option>
       </select>
+      <button class="btn-small" id="btnMarketRecommend">推荐</button>
       <button class="btn-small" id="marketRefresh">刷新</button>
     </div>
     <div class="mb-body" id="marketBody"><div class="market-empty">加载市场数据中...</div></div>
@@ -1428,6 +1433,7 @@ const MARKET_URL="https://awesome-dsh-plugin.com/plugins.json";
 let marketData=[];
 let marketCategories={};
 let marketLoading=false;
+let marketRecommend=false;
 function marketTarget(m){
   if(m.install){const parts=m.install.trim().split(/\s+/);if(parts.length)return parts[parts.length-1]}
   return m.npm||m.name;
@@ -1457,6 +1463,37 @@ const marketObserver=new ResizeObserver(()=>{
     if($("marketModal")&&$("marketModal").classList.contains("show"))renderMarket();
   },150);
 });
+function marketMaxStars(){
+  let max=0;
+  (marketData||[]).forEach(m=>{const s=m.stars||0;if(s>max)max=s});
+  return max;
+}
+function starsNorm(m,max){
+  if(max<=0)return 0;
+  return Math.log1p(m.stars||0)/Math.log1p(max);
+}
+function daysSinceAdded(m){
+  if(!m.added)return 9999;
+  const t=Date.parse(m.added);
+  return isNaN(t)?9999:(Date.now()-t)/86400000;
+}
+function comboScore(m,max){
+  // 综合排序：热度（星标对数归一化）60% + 时效（指数衰减）40%，npm 可安装小幅加成
+  const rec=Math.exp(-daysSinceAdded(m)/180);
+  return +(0.6*starsNorm(m,max)+0.4*rec+(m.npm?0.05:0)).toFixed(4);
+}
+const REC_CAT_WEIGHT={
+  session:1.0,memory:0.9,tools:0.9,skill:0.9,workflow:0.8,model:0.7,
+  ui:0.6,notify:0.6,dev:0.5,usage:0.4,vision:0.4,market:0.3,theme:0.2,fun:0.1
+};
+function recScore(m,max){
+  const cat=REC_CAT_WEIGHT[m.category]!=null?REC_CAT_WEIGHT[m.category]:0.3;
+  const rec=Math.exp(-daysSinceAdded(m)/180);
+  return +(0.45*cat+0.35*starsNorm(m,max)+0.20*rec).toFixed(4);
+}
+function recommendMarket(max){
+  return (marketData||[]).slice().sort((a,b)=>recScore(b,max)-recScore(a,max)).slice(0,12);
+}
 function renderMarket(){
   const kw=($("marketSearch")?.value||"").toLowerCase();
   const cat=$("marketCategory")?.value||"";
@@ -1465,24 +1502,41 @@ function renderMarket(){
   const sort=$("marketSort")?.value||"";
   const body=$("marketBody");
   const installed=marketInstalledSet();
-  let list=(marketData||[]).filter(m=>{
-    if(cat&&m.category!==cat)return false;
-    const isInst=m.installed||installed.has((m.name||"").toLowerCase())||(m.npm&&installed.has(m.npm.toLowerCase()));
-    if(status==="installed"&&!isInst)return false;
-    if(status==="not"&&isInst)return false;
-    if(source==="npm"&&!m.npm)return false;
-    if(source==="github"&&m.npm)return false;
+  const maxStars=marketMaxStars();
+  let list;
+  if(marketRecommend){
+    list=recommendMarket(maxStars);
     if(kw){
-      const hay=(m.name+" "+(m.owner||"")+" "+marketDesc(m)+" "+(m.npm||"")).toLowerCase();
-      if(!hay.includes(kw))return false;
+      list=list.filter(m=>(m.name+" "+(m.owner||"")+" "+marketDesc(m)+" "+(m.npm||"")).toLowerCase().includes(kw));
     }
-    return true;
-  });
-  if(sort==="stars")list=list.slice().sort((a,b)=>(b.stars||0)-(a.stars||0));
-  else if(sort==="name")list=list.slice().sort((a,b)=>(a.name||"").localeCompare(b.name||""));
-  else if(sort==="added")list=list.slice().sort((a,b)=>(b.added||"").localeCompare(a.added||""));
+  }else{
+    list=(marketData||[]).filter(m=>{
+      if(cat&&m.category!==cat)return false;
+      const isInst=m.installed||installed.has((m.name||"").toLowerCase())||(m.npm&&installed.has(m.npm.toLowerCase()));
+      if(status==="installed"&&!isInst)return false;
+      if(status==="not"&&isInst)return false;
+      if(source==="npm"&&!m.npm)return false;
+      if(source==="github"&&m.npm)return false;
+      if(kw){
+        const hay=(m.name+" "+(m.owner||"")+" "+marketDesc(m)+" "+(m.npm||"")).toLowerCase();
+        if(!hay.includes(kw))return false;
+      }
+      return true;
+    });
+    if(sort==="stars")list=list.slice().sort((a,b)=>(b.stars||0)-(a.stars||0));
+    else if(sort==="name")list=list.slice().sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+    else if(sort==="added")list=list.slice().sort((a,b)=>(b.added||"").localeCompare(a.added||""));
+    else list=list.slice().sort((a,b)=>comboScore(b,maxStars)-comboScore(a,maxStars));
+  }
   if(!list.length){body.innerHTML='<div class="market-empty">没有符合条件的插件</div>';return}
   body.innerHTML="";
+  if(marketRecommend){
+    const hint=document.createElement("div");
+    hint.className="market-empty";
+    hint.style.cssText="grid-column:1/-1;text-align:left;padding:2px;color:var(--text-secondary);font-size:12px";
+    hint.textContent="推荐：按「分类相关度 + 热度 + 时效」选出 12 个适合 DSH 环境的扩展";
+    body.appendChild(hint);
+  }
   list.forEach(m=>{
     const isInst=m.installed||installed.has((m.name||"").toLowerCase())||(m.npm&&installed.has(m.npm.toLowerCase()));
     const dispName=m.name||m.id||"未命名插件";
@@ -1497,6 +1551,7 @@ function renderMarket(){
         <div class="mc-title">
           <div class="mc-avatar"><img src="${escapeHtml(avatar)}" loading="lazy" alt="" onerror="this.parentNode.textContent='${escapeHtml(initial)}'"></div>
           <span class="mc-name" title="${escapeHtml(dispName)}">${escapeHtml(dispName)}</span>
+          ${marketRecommend?`<span class="cc-tag tag-builtin">推荐</span>`:""}
         </div>
         <div style="display:flex;gap:6px;flex:none">
           ${m.url?`<button class="btn-small" style="padding:4px 8px;font-size:11px" data-act="open" data-url="${escapeHtml(m.url)}">主页</button>`:""}
@@ -1560,6 +1615,15 @@ $("btnOpenMarket")?.addEventListener("click",async()=>{
 });
 $("marketClose").onclick=()=>{marketObserver.disconnect();$("marketModal").classList.remove("show")};
 $("marketSearch")?.addEventListener("input",renderMarket);
+$("marketSearch")?.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();renderMarket()}});
+$("btnMarketSearch")?.addEventListener("click",()=>{renderMarket();$("marketSearch")?.focus()});
+$("btnMarketRecommend")?.addEventListener("click",()=>{
+  marketRecommend=!marketRecommend;
+  $("btnMarketRecommend").classList.toggle("active",marketRecommend);
+  if(marketRecommend&&!marketData.length){loadMarket(false);return}
+  renderMarket();
+  appendLog(marketRecommend?"[市场] 已开启推荐视图（分类相关度+热度+时效）":"[市场] 已关闭推荐视图","log-stop");
+});
 $("marketCategory")?.addEventListener("change",renderMarket);
 $("marketStatus")?.addEventListener("change",renderMarket);
 $("marketSource")?.addEventListener("change",renderMarket);
