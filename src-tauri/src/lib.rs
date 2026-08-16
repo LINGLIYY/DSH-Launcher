@@ -358,6 +358,84 @@ fn delete_session(id: String) -> Result<String, String> {
     sessions::delete_by_id(&id)
 }
 
+#[tauri::command]
+fn list_trash() -> Vec<sessions::TrashInfo> {
+    sessions::list_trash()
+}
+
+#[tauri::command]
+fn restore_session(id: String) -> Result<String, String> {
+    sessions::restore_by_id(&id)
+}
+
+#[tauri::command]
+fn purge_trash(id: String) -> Result<(), String> {
+    sessions::purge_by_id(&id)
+}
+
+#[tauri::command]
+fn empty_trash() -> Result<usize, String> {
+    sessions::empty_trash()
+}
+
+#[tauri::command]
+fn copy_text(text: String) -> Result<(), String> {
+    use std::io::Write;
+    let mut child = std::process::Command::new("clip")
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(text.as_bytes());
+    }
+    let _ = child.wait();
+    Ok(())
+}
+
+#[tauri::command]
+fn read_launcher_log() -> Result<String, String> {
+    let p = std::path::Path::new(&default_logs_dir()).join("launcher.log");
+    std::fs::read_to_string(&p).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn dsh_version() -> Result<serde_json::Value, String> {
+    let dsh = tauri::async_runtime::spawn_blocking(harness::find_dsh)
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    let dsh_cmd = dsh.clone();
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("cmd")
+            .args(["/C", &dsh_cmd, "--version"])
+            .creation_flags(0x0800_0000)
+            .output()
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    let version = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Ok(serde_json::json!({
+        "path": dsh,
+        "version": if version.is_empty() { err } else { version },
+    }))
+}
+
+#[tauri::command]
+fn set_always_on_top(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, PrefsState>,
+    enabled: bool,
+) -> Result<(), String> {
+    window.set_always_on_top(enabled).map_err(|e| e.to_string())?;
+    let mut p = state.inner.lock().unwrap().clone();
+    p.always_on_top = enabled;
+    *state.inner.lock().unwrap() = p.clone();
+    prefs::save(&p)
+}
+
 fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::TrayIconBuilder;
@@ -462,6 +540,9 @@ pub fn run() {
             setup_tray(app.handle())?;
 
             if let Some(w) = app.get_webview_window("main") {
+                if startup_prefs.always_on_top {
+                    let _ = w.set_always_on_top(true);
+                }
                 if startup_prefs.remember_window {
                     let wp = &startup_prefs.window;
                     if let (Some(x), Some(y)) = (wp.x, wp.y) {
@@ -555,6 +636,14 @@ pub fn run() {
             list_sessions,
             get_session,
             delete_session,
+            list_trash,
+            restore_session,
+            purge_trash,
+            empty_trash,
+            copy_text,
+            read_launcher_log,
+            dsh_version,
+            set_always_on_top,
             list_plugins,
             list_skills,
             list_mcp,

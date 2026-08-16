@@ -358,6 +358,10 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
           <div class="si-label"><span>记住窗口位置与大小</span><div class="switch on" id="swRememberWin"></div></div>
         </div>
         <div class="setting-item">
+          <div class="si-label"><span>窗口置顶</span><div class="switch" id="swAlwaysOnTop"></div></div>
+          <div class="si-desc">开启后启动器窗口始终显示在最前，方便随时查看日志与状态。</div>
+        </div>
+        <div class="setting-item">
           <div class="si-label"><span>开机自启动</span><div class="switch" id="swAutoStart"></div></div>
         </div>
 
@@ -458,16 +462,16 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
         <div class="setting-item"><div class="si-desc">DSH 未暴露独立的资源限额配置，此项待官方能力确认后接入；下方用量概览同样待接入。</div></div>
 <h3 style="margin-top:20px">用量概览（当前端）</h3>
         <div class="usage-item">
-          <div class="ui-label"><span>当日已消耗 Token</span><span class="val" id="usageToken">128,450 / 500,000</span></div>
-          <div class="usage-bar"><div class="fill" id="barToken" style="width:25.7%"></div></div>
+          <div class="ui-label"><span>当日已消耗 Token</span><span class="val" id="usageToken">待接入</span></div>
+          <div class="usage-bar"><div class="fill" id="barToken" style="width:0%"></div></div>
         </div>
         <div class="usage-item">
-          <div class="ui-label"><span>当前活跃会话</span><span class="val" id="usageSession">2 / 5</span></div>
-          <div class="usage-bar"><div class="fill" id="barSession" style="width:40%"></div></div>
+          <div class="ui-label"><span>当前活跃会话</span><span class="val" id="usageSession">待接入</span></div>
+          <div class="usage-bar"><div class="fill" id="barSession" style="width:0%"></div></div>
         </div>
         <div class="usage-item">
-          <div class="ui-label"><span>今日插件总调用</span><span class="val" id="usagePlugin">347 次</span></div>
-          <div class="usage-bar"><div class="fill" id="barPlugin" style="width:18%"></div></div>
+          <div class="ui-label"><span>今日插件总调用</span><span class="val" id="usagePlugin">待接入</span></div>
+          <div class="usage-bar"><div class="fill" id="barPlugin" style="width:0%"></div></div>
         </div>
         <div style="margin-top:10px">
           <button class="btn-small" id="btnRefreshUsage">刷新用量</button>
@@ -548,6 +552,21 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
   </div>
 </div>
 
+<!-- 会话回收站弹窗 -->
+<div class="market-modal" id="trashModal">
+  <div class="market-box" style="width:680px">
+    <div class="mb-head">
+      <h3>会话回收站</h3>
+      <button class="settings-close" id="trashClose">&times;</button>
+    </div>
+    <div class="mb-toolbar">
+      <button class="btn-small" id="trashRefresh">刷新</button>
+      <button class="btn-danger" id="trashEmpty">清空回收站</button>
+    </div>
+    <div class="mb-body" id="trashBody"><div class="market-empty">加载回收站...</div></div>
+  </div>
+</div>
+
 <!-- 二次确认弹窗 -->
 <div class="confirm-modal" id="confirmModal">
   <div class="confirm-box">
@@ -609,6 +628,12 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
           <label>访问地址</label>
           <input type="text" id="urlInput" value="http://127.0.0.1:7602/" readonly>
           <button class="btn-small" id="btnOpenBrowser">打开网页</button>
+          <button class="btn-small" id="btnCopyUrl">复制</button>
+        </div>
+        <div class="form-row">
+          <label>DSH 版本</label>
+          <input type="text" id="dshVersionText" value="检测中..." readonly>
+          <button class="btn-small" id="btnCopyVersion">复制</button>
         </div>
         <div class="btn-group">
           <button class="btn-primary" id="btnStart">启动 DSH</button>
@@ -622,6 +647,7 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
       <div class="log-box" id="logContent">等待启动 DSH 基座...</div>
       <div class="log-footer">
         <span class="log-clear" id="clearLog">清空日志</span>
+        <span class="log-clear" id="copyLog">复制日志</span>
         <span id="logLineCount">0</span>
       </div>
     </div>
@@ -632,6 +658,7 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
     <div style="display:flex;gap:6px;padding:0 var(--safe-padding);margin-top:var(--gap-block)">
       <button class="btn-small" id="btnRefreshSessions">刷新</button>
       <button class="btn-danger" id="btnDeleteSession">删除会话</button>
+      <button class="btn-small" id="btnOpenTrash">回收站</button>
       <input type="text" id="sessionSearch" placeholder="搜索会话标题 / 工作区" style="flex:1;padding:5px 8px;border:1px solid var(--border-color);border-radius:3px;font-size:12px">
     </div>
     <div class="session-layout">
@@ -1067,11 +1094,12 @@ function setSwitch(id,on){const el=$(id);if(el)el.classList.toggle("on",!!on)}
 function isSwitchOn(id){return !!($(id)&&$(id).classList.contains("on"))}
 async function loadLauncherPrefs(){
   try{launcherPrefs=await invoke("get_launcher_prefs")}
-  catch(e){launcherPrefs={close_behavior:"tray",single_instance:true,remember_window:true,auto_start:false,auto_open_browser:false,port_policy:"takeover",save_log:true,log_retention_days:15}}
+  catch(e){launcherPrefs={close_behavior:"tray",single_instance:true,remember_window:true,auto_start:false,auto_open_browser:false,always_on_top:false,port_policy:"takeover",save_log:true,log_retention_days:15}}
   $("closeBehavior").value=launcherPrefs.close_behavior||"tray";
   $("launchBehavior").value=launcherPrefs.auto_start?"auto":"manual";
   setSwitch("swAutoBrowser",!!launcherPrefs.auto_open_browser);
   setSwitch("swRememberWin",launcherPrefs.remember_window!==false);
+  setSwitch("swAlwaysOnTop",!!launcherPrefs.always_on_top);
   setSwitch("swSaveLog",launcherPrefs.save_log!==false);
   $("logRetention").value=String(launcherPrefs.log_retention_days||15);
   $("portPolicy").value=launcherPrefs.port_policy||"takeover";
@@ -1085,6 +1113,7 @@ async function saveLauncherPrefs(){
   launcherPrefs.auto_open_browser=isSwitchOn("swAutoBrowser");
   launcherPrefs.close_behavior=$("closeBehavior").value;
   launcherPrefs.remember_window=isSwitchOn("swRememberWin");
+  launcherPrefs.always_on_top=isSwitchOn("swAlwaysOnTop");
   launcherPrefs.save_log=isSwitchOn("swSaveLog");
   launcherPrefs.log_retention_days=parseInt($("logRetention").value||"15");
   launcherPrefs.port_policy=$("portPolicy").value;
@@ -1098,6 +1127,11 @@ $("portPolicy").addEventListener("change",saveLauncherPrefs);
 $("swAutoBrowser").addEventListener("click",()=>{setSwitch("swAutoBrowser",!isSwitchOn("swAutoBrowser"));saveLauncherPrefs()});
 $("swRememberWin").addEventListener("click",()=>{setSwitch("swRememberWin",!isSwitchOn("swRememberWin"));saveLauncherPrefs()});
 $("swSaveLog").addEventListener("click",()=>{setSwitch("swSaveLog",!isSwitchOn("swSaveLog"));saveLauncherPrefs()});
+$("swAlwaysOnTop").addEventListener("click",async()=>{
+  const on=!isSwitchOn("swAlwaysOnTop");setSwitch("swAlwaysOnTop",on);launcherPrefs.always_on_top=on;
+  try{await invoke("set_always_on_top",{enabled:on});appendLog(on?"[启动器] 已开启窗口置顶":"[启动器] 已关闭窗口置顶","log-stop")}
+  catch(e){appendLog("设置窗口置顶失败："+e,"log-error")}
+});
 $("swAutoStart").addEventListener("click",async()=>{
   const on=!isSwitchOn("swAutoStart");setSwitch("swAutoStart",on);
   try{await invoke("set_autostart",{enabled:on});appendLog(on?"[启动器] 已开启开机自启动":"[启动器] 已关闭开机自启动","log-ready")}
@@ -1134,6 +1168,24 @@ $("openUrlLink").onclick=()=>invoke("open_browser",{endpoint_id:currentEndpoint(
 $("btnOpenBrowser").onclick=()=>invoke("open_browser",{endpoint_id:currentEndpoint().id});
 $("btnOpenLogDir").onclick=()=>invoke("open_logs_dir");
 $("btnOpenLogDir2").onclick=()=>invoke("open_logs_dir");
+async function copyToClipboard(text,label){
+  if(!text){appendLog("[复制] 内容为空","log-stop");return}
+  try{await invoke("copy_text",{text});appendLog(`[复制] ${label} 已复制到剪贴板`,"log-stop")}
+  catch(e){appendLog(`[复制] 失败：${e}`,"log-error")}
+}
+$("btnCopyUrl").onclick=()=>copyToClipboard($("urlInput").value,"访问地址");
+$("btnCopyVersion").onclick=()=>copyToClipboard($("dshVersionText").value.replace(/^检测中\.\.\.$/,"")||$("dshVersionText").value,"DSH 版本");
+$("copyLog").onclick=async()=>{
+  try{const t=await invoke("read_launcher_log");if(!t){appendLog("[复制] 日志为空","log-stop");return}await copyToClipboard(t,"启动器日志")}
+  catch(e){appendLog("[复制] 读取日志失败："+e,"log-error")}
+};
+async function loadDshVersion(){
+  try{
+    const v=await invoke("dsh_version");
+    $("dshVersionText").value=v.version||"未知";
+    if(v.path)$("dshVersionText").title=v.path;
+  }catch(e){$("dshVersionText").value="检测失败"}
+}
 $("btnClearCache")?.addEventListener("click",()=>showConfirm("清空启动器缓存","确定清空启动器缓存吗？会重置偏好并清理日志，之后界面刷新。",async()=>{
   try{await invoke("clear_launcher_cache");appendLog("[缓存] 已清空，界面即将刷新","log-stop");setTimeout(()=>location.reload(),500)}
   catch(e){appendLog("清空失败："+e,"log-error")}
@@ -1183,6 +1235,51 @@ async function loadSessionDetail(id){
   box.innerHTML=`<div style="margin-bottom:10px;font-size:12px;color:var(--text-secondary)">会话 ID：${id}（端：${currentEndpoint().name}）</div>`;
   blocks.forEach(b=>{const d=document.createElement("div");d.className="msg "+(b.kind==="user"?"user":b.kind==="tool"?"tool":"assistant");d.textContent=b.text;box.appendChild(d)});
 }
+
+/* ============================================================
+   会话回收站
+   ============================================================ */
+async function renderTrash(){
+  const box=$("trashBody");box.innerHTML='<div class="market-empty">加载回收站...</div>';
+  let list=[];
+  try{list=await invoke("list_trash")}catch(e){box.innerHTML='<div class="market-empty">加载失败：'+escapeHtml(String(e))+'</div>';return}
+  box.innerHTML="";
+  if(!list||!list.length){box.innerHTML='<div class="market-empty">回收站为空</div>';return}
+  list.forEach(t=>{
+    const card=document.createElement("div");card.className="market-card";
+    card.innerHTML=`
+      <div class="mc-head">
+        <span class="mc-name">${escapeHtml(t.title)}</span>
+        <span class="status-badge badge-off" title="${escapeHtml(t.workspace)}">${escapeHtml(t.workspace||"未知工作区")}</span>
+      </div>
+      <div class="mc-meta">ID: ${escapeHtml(t.id)} · ${fmtTime(t.deleted_ms)} · ${(t.size/1024).toFixed(1)}KB</div>
+      <div class="cc-actions" style="margin-top:8px">
+        <button class="btn-small" data-act="restore" data-id="${escapeHtml(t.id)}">恢复</button>
+        <button class="btn-danger" data-act="purge" data-id="${escapeHtml(t.id)}">彻底删除</button>
+      </div>`;
+    box.appendChild(card);
+  });
+  box.querySelectorAll("button[data-act]").forEach(b=>{
+    b.onclick=e=>{
+      e.stopPropagation();const id=b.dataset.id,act=b.dataset.act;
+      if(act==="restore"){
+        invoke("restore_session",{id}).then(()=>{appendLog(`[回收站] 会话 ${id} 已恢复`,"log-ready");renderTrash();loadSessions()}).catch(err=>appendLog("[回收站] 恢复失败："+err,"log-error"));
+      }else if(act==="purge"){
+        showConfirm("彻底删除","确定彻底删除该会话吗？此操作不可恢复。",async()=>{
+          try{await invoke("purge_trash",{id});appendLog(`[回收站] 会话 ${id} 已彻底删除`,"log-error");renderTrash()}
+          catch(err){appendLog("[回收站] 删除失败："+err,"log-error")}
+        });
+      }
+    };
+  });
+}
+$("btnOpenTrash")?.addEventListener("click",()=>{$("trashModal").classList.add("show");renderTrash()});
+$("trashClose")?.addEventListener("click",()=>$("trashModal").classList.remove("show"));
+$("trashRefresh")?.addEventListener("click",renderTrash);
+$("trashEmpty")?.addEventListener("click",()=>showConfirm("清空回收站","确定清空回收站吗？所有已删除会话将被永久删除，不可恢复。",async()=>{
+  try{const n=await invoke("empty_trash");appendLog(`[回收站] 已清空 ${n} 个会话`,"log-error");renderTrash()}
+  catch(err){appendLog("[回收站] 清空失败："+err,"log-error")}
+}));
 
 /* ============================================================
    插件管理
@@ -1533,6 +1630,7 @@ applyKanban();
 updateEndpointUI();
 loadLauncherPrefs();
 loadCapabilityData();
+loadDshVersion();
 updateStatus(false,false);
 appendLog("DSH Desktop 启动器已就绪","log-ready");
 appendLog(`当前端：${currentEndpoint().name}（${typeLabel(currentEndpoint().type)}）`,"log-stop");

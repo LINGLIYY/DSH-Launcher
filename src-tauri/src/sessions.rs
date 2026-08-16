@@ -17,12 +17,29 @@ pub struct Block {
     pub text: String,
 }
 
+#[derive(Serialize)]
+pub struct TrashInfo {
+    pub id: String,
+    pub workspace: String,
+    pub title: String,
+    pub deleted_ms: u64,
+    pub size: u64,
+}
+
 fn sessions_root() -> PathBuf {
     let base = std::env::var("APPDATA").unwrap_or_else(|_| "C:\\".to_string());
     PathBuf::from(base)
         .join("dsh-desktop")
         .join("harness")
         .join("sessions")
+}
+
+fn trash_root() -> PathBuf {
+    let base = std::env::var("APPDATA").unwrap_or_else(|_| "C:\\".to_string());
+    PathBuf::from(base)
+        .join("dsh-desktop")
+        .join("harness")
+        .join("sessions_trash")
 }
 
 fn data_file(session_dir: &Path) -> Option<PathBuf> {
@@ -258,17 +275,164 @@ pub fn render_by_id(id: &str) -> Result<Vec<Block>, String> {
 
 pub fn delete_by_id(id: &str) -> Result<String, String> {
     let sid_dir = find_dir_by_id(id)?;
-    let root = sessions_root();
-    let trash = root
-        .parent()
-        .map(|p| p.join("sessions_trash"))
-        .unwrap_or_else(|| root.join("sessions_trash"));
+    let trash = trash_root();
     std::fs::create_dir_all(&trash).map_err(|e| e.to_string())?;
+    let workspace = sid_dir
+        .parent()
+        .and_then(|p| p.file_name())
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let dest = trash.join(format!("{}_{}", stamp, id));
     std::fs::rename(&sid_dir, &dest).map_err(|e| e.to_string())?;
+    let meta = serde_json::json!({
+        "id": id,
+        "workspace": workspace,
+        "deletedAt": stamp,
+    });
+    let _ = std::fs::write(
+        dest.join("_trash_meta.json"),
+        serde_json::to_string_pretty(&meta).unwrap_or_default(),
+    );
     Ok(dest.to_string_lossy().into_owned())
+}
+
+fn dir_size(dir: &Path) -> u64 {
+    let mut total = 0u64;
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    for entry in rd.flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            total += dir_size(&p);
+        } else if let Ok(m) = p.metadata() {
+            total += m.len();
+        }
+    }
+    total
+}
+
+fn read_trash_meta(dir: &Path) -> (String, String) {
+    let mut id = String::new();
+    let mut workspace = String::new();
+    if let Ok(txt) = std::fs::read_to_string(dir.join("_trash_meta.json")) {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
+            if let Some(x) = v.get("id").and_then(|x| x.as_str()) {
+                id = x.to_string();
+            }
+            if let Some(x) = v.get("workspace").and_then(|x| x.as_str()) {
+                workspace = x.to_string();
+            }
+        }
+    }
+    (id, workspace)
+}
+
+pub fn list_trash() -> Vec<TrashInfo> {
+    let root = trash_root();
+    let mut out = Vec::new();
+    let Ok(rd) = std::fs::read_dir(&root) else {
+        return out;
+    };
+    for entry in rd.flatten() {
+        let dir = entry.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let (id, workspace) = read_trash_meta(&dir);
+        let id = if id.is_empty() {
+            // 兼容旧的命名方式：<stamp>_<id>
+            entry
+                .file_name()
+                .to_string_lossy()
+                .rsplit_once('_')
+                .map(|(_, i)| i.to_string())
+                .unwrap_or_else(|| entry.file_name().to_string_lossy().into_owned())
+        } else {
+            id
+        };
+        let title = data_file(&dir)
+            .and_then(|f| decode(&f).ok())
+            .map(|b| String::from_utf8_lossy(&b).into_owned())
+            .map(|t| header_and_title(&t).1)
+            .unwrap_or_else(|| "未命名会话".to_string());
+        let deleted_ms = entry
+            .metadata()
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        out.push(TrashInfo {
+            id,
+            workspace,
+            title,
+            deleted_ms,
+            size: dir_size(&dir),
+        });
+    }
+    out.sort_by(|a, b| b.deleted_ms.cmp(&a.deleted_ms));
+    out
+}
+
+fn find_trash_dir(id: &str) -> Result<PathBuf, String> {
+    let root = trash_root();
+    let entries = std::fs::read_dir(&root).map_err(|e| e.to_string())?;
+    for entry in entries.flatten() {
+        let dir = entry.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let (mid, _) = read_trash_meta(&dir);
+        if mid == id {
+            return Ok(dir);
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.ends_with(&format!("_{id}")) {
+            return Ok(dir);
+        }
+    }
+    Err("回收站中未找到该会话".to_string())
+}
+
+pub fn restore_by_id(id: &str) -> Result<String, String> {
+    let trash_dir = find_trash_dir(id)?;
+    let (_, workspace) = read_trash_meta(&trash_dir);
+    let workspace = if workspace.is_empty() {
+        "--restored--".to_string()
+    } else {
+        workspace
+    };
+    let root = sessions_root();
+    let target = root.join(&workspace).join(id);
+    if target.exists() {
+        return Err(format!("会话 {id} 已存在，无法恢复"));
+    }
+    std::fs::create_dir_all(target.parent().unwrap()).map_err(|e| e.to_string())?;
+    std::fs::rename(&trash_dir, &target).map_err(|e| e.to_string())?;
+    let _ = std::fs::remove_file(target.join("_trash_meta.json"));
+    Ok(target.to_string_lossy().into_owned())
+}
+
+pub fn purge_by_id(id: &str) -> Result<(), String> {
+    let dir = find_trash_dir(id)?;
+    std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())
+}
+
+pub fn empty_trash() -> Result<usize, String> {
+    let root = trash_root();
+    let mut count = 0;
+    if let Ok(rd) = std::fs::read_dir(&root) {
+        for entry in rd.flatten() {
+            if entry.path().is_dir() {
+                std::fs::remove_dir_all(entry.path()).map_err(|e| e.to_string())?;
+                count += 1;
+            }
+        }
+    }
+    Ok(count)
 }
