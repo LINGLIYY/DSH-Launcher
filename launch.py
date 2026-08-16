@@ -44,6 +44,39 @@ def default_dsh_home() -> str:
     return os.path.join(base, "dsh-desktop", "harness")
 
 
+def acquire_single_instance_lock() -> Path | None:
+    """托盘模式单实例锁：返回锁文件路径，已存在且进程存活则返回 None。"""
+    base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+    lock_path = Path(base) / "dsh-desktop" / "launcher.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    if lock_path.exists():
+        try:
+            old_pid = int(lock_path.read_text(encoding="utf-8").strip())
+            if _pid_alive(old_pid):
+                return None
+        except (OSError, ValueError):
+            pass
+    lock_path.write_text(str(os.getpid()), encoding="utf-8")
+    return lock_path
+
+
+def _pid_alive(pid: int) -> bool:
+    if os.name != "nt":
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+    import ctypes
+
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if handle:
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return True
+    return False
+
+
 def set_console_icon(ico_path: Path) -> None:
     """给控制台窗口设置自定义图标（保留 DSH Desktop 图标设计）。"""
     if os.name != "nt" or not ico_path.exists():
@@ -184,15 +217,26 @@ def main() -> int:
     if args.tray:
         import launcher_tray
 
-        return launcher_tray.run_tray(
-            args,
-            {
-                "find_dsh": find_dsh,
-                "http_ready": http_ready,
-                "kill_tree": kill_tree,
-                "default_dsh_home": default_dsh_home,
-            },
-        )
+        lock_path = acquire_single_instance_lock()
+        if lock_path is None:
+            print("已有 DSH Desktop 托盘实例在运行，请使用现有实例（或先退出它）。")
+            return 0
+        try:
+            return launcher_tray.run_tray(
+                args,
+                {
+                    "find_dsh": find_dsh,
+                    "http_ready": http_ready,
+                    "kill_tree": kill_tree,
+                    "default_dsh_home": default_dsh_home,
+                },
+            )
+        finally:
+            try:
+                if lock_path.exists() and lock_path.read_text(encoding="utf-8").strip() == str(os.getpid()):
+                    lock_path.unlink()
+            except OSError:
+                pass
 
     url = f"http://{args.host}:{args.port}/"
     workspace = os.path.abspath(args.workspace)

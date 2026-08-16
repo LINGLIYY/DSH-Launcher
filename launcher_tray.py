@@ -463,6 +463,7 @@ class ControlWindow:
         self.tray = None
         self.auto_open = False
         self._shown = 0
+        self._poll_count = 0
         self.sessions_root = sessions_root
         self.trash_root = trash_root
 
@@ -685,6 +686,8 @@ class ControlWindow:
         self.root.focus_force()
 
     def hide(self):
+        if self.mgr is not None:
+            self.mgr._log("窗口已隐藏到托盘，可通过托盘图标恢复")
         self.root.withdraw()
 
     def _set_status_style(self):
@@ -740,6 +743,9 @@ class ControlWindow:
         self.log_count_var.set(f"共 {len(lines)} 行")
 
     def _poll(self):
+        self._poll_count += 1
+        if self.tray is not None and self._poll_count % 150 == 0:
+            self._check_tray()
         try:
             while True:
                 item = self.q.get_nowait()
@@ -781,6 +787,23 @@ class ControlWindow:
         except queue.Empty:
             pass
         self.root.after(POLL_MS, self._poll)
+
+    def _check_tray(self):
+        try:
+            icon = self.tray.icon
+            running = getattr(icon, "_running", None)
+            if running is not True:
+                self.mgr._log(f"托盘图标状态异常（running={running}），尝试恢复…")
+                icon.visible = True
+                if running is not True:
+                    try:
+                        icon.run_detached()
+                    except Exception as exc:
+                        self.mgr._log(f"托盘恢复失败: {exc!r}")
+            else:
+                icon.visible = True
+        except Exception as exc:
+            self.mgr._log(f"托盘检查异常: {exc!r}")
 
 
 class TrayIcon:
