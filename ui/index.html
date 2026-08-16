@@ -889,6 +889,10 @@ $("btnScanEndpoints")?.addEventListener("click",async()=>{
   const found=await invoke("scan_wsl");
   let added=0;
   found.forEach(f=>{
+    if(!f.path){
+      appendLog(`[多端] ${f.name} 未检测到 WSL 原生 dsh，已跳过（仅接受 WSL 内安装的 dsh）`,"log-stop");
+      return;
+    }
     if(!endpoints.some(e=>e.distro===f.distro)){
       endpoints.push({id:"ep-wsl-"+Date.now()+Math.random().toString(36).slice(2,6),
         name:f.name,type:"wsl",distro:f.distro,path:f.path,port:7600+endpoints.length,
@@ -1700,12 +1704,14 @@ document.querySelectorAll(".action-grid button[data-open]").forEach(btn=>{
 $("btnExportConfig")?.addEventListener("click",async()=>{
   try{
     const dsh=await invoke("get_dsh_settings");
-    const prefs={
+    const cordis=await invoke("get_cordis_patch").catch(()=>null);
+    const rustPrefs=await invoke("get_launcher_prefs").catch(()=>null);
+    const localPrefs={
       kanban:localStorage.getItem(KANBAN_KEY),
       endpoints:localStorage.getItem(EP_KEY),
       drawer:localStorage.getItem(DRAWER_KEY)
     };
-    const data=JSON.stringify({version:1,exportedAt:new Date().toISOString(),launcher_prefs:prefs,dsh_settings:dsh},null,2);
+    const data=JSON.stringify({version:2,exportedAt:new Date().toISOString(),local_prefs:localPrefs,launcher_prefs:rustPrefs,dsh_settings:dsh,cordis_patch:cordis},null,2);
     const p=await invoke("save_text_file",{defaultName:"dsh-desktop-config.json",content:data});
     if(p)appendLog("[维护] 配置已导出："+p,"log-ready");
   }catch(e){appendLog("导出失败："+e,"log-error")}
@@ -1715,12 +1721,23 @@ $("btnImportConfig")?.addEventListener("click",async()=>{
     const content=await invoke("pick_and_read_config");
     if(!content)return;
     const data=JSON.parse(content);
-    if(data.launcher_prefs){
-      if(data.launcher_prefs.kanban)localStorage.setItem(KANBAN_KEY,data.launcher_prefs.kanban);
-      if(data.launcher_prefs.endpoints)localStorage.setItem(EP_KEY,data.launcher_prefs.endpoints);
-      if(data.launcher_prefs.drawer)localStorage.setItem(DRAWER_KEY,data.launcher_prefs.drawer);
+    if(data.version>=2){
+      if(data.local_prefs){
+        if(data.local_prefs.kanban)localStorage.setItem(KANBAN_KEY,data.local_prefs.kanban);
+        if(data.local_prefs.endpoints)localStorage.setItem(EP_KEY,data.local_prefs.endpoints);
+        if(data.local_prefs.drawer)localStorage.setItem(DRAWER_KEY,data.local_prefs.drawer);
+      }
+      if(data.launcher_prefs && typeof data.launcher_prefs==="object")await invoke("set_launcher_prefs",{prefsJson:data.launcher_prefs});
+    }else{
+      // 兼容 v1：旧的 launcher_prefs 里放的是 localStorage 字符串
+      if(data.launcher_prefs){
+        if(data.launcher_prefs.kanban)localStorage.setItem(KANBAN_KEY,data.launcher_prefs.kanban);
+        if(data.launcher_prefs.endpoints)localStorage.setItem(EP_KEY,data.launcher_prefs.endpoints);
+        if(data.launcher_prefs.drawer)localStorage.setItem(DRAWER_KEY,data.launcher_prefs.drawer);
+      }
     }
     if(data.dsh_settings!==undefined)await invoke("set_dsh_settings",{text:data.dsh_settings});
+    if(data.cordis_patch!==undefined)await invoke("set_cordis_patch",{text:data.cordis_patch});
     appendLog("[维护] 配置已导入，界面即将刷新","log-ready");
     setTimeout(()=>location.reload(),600);
   }catch(e){appendLog("导入失败："+e,"log-error")}

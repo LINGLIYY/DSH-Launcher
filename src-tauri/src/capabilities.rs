@@ -59,12 +59,26 @@ fn wsl_dsh_path(distro: &str) -> String {
         ])
         .output();
     match out {
-        Ok(o) if o.status.success() => decode_wsl(&o.stdout)
-            .lines()
-            .next()
-            .unwrap_or("")
-            .trim()
-            .to_string(),
+        Ok(o) if o.status.success() => {
+            let p = decode_wsl(&o.stdout)
+                .lines()
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            // 过滤 Windows 通过 WSL PATH 互操作暴露的 npm shim（/mnt/...），
+            // 只接受 WSL 内原生安装的 dsh。
+            if p.starts_with("/mnt/")
+                || p.contains('\\')
+                || p.ends_with(".cmd")
+                || p.ends_with(".exe")
+                || p.ends_with(".ps1")
+            {
+                String::new()
+            } else {
+                p
+            }
+        }
         _ => String::new(),
     }
 }
