@@ -13,6 +13,7 @@ pub struct PluginInfo {
     pub skills: Vec<String>,
     pub source: String,
     pub dir: Option<String>,
+    pub kind: String,
 }
 
 #[derive(Serialize)]
@@ -297,6 +298,7 @@ pub fn list_plugins() -> Vec<PluginInfo> {
                             skills: vec![],
                             source: "bundle".to_string(),
                             dir: None,
+                            kind: "builtin".to_string(),
                         });
                     }
                 }
@@ -327,6 +329,11 @@ pub fn list_plugins() -> Vec<PluginInfo> {
             skills: vec![],
             source: "npm".to_string(),
             dir: Some(dir.to_string_lossy().into_owned()),
+            kind: if name.starts_with("@deepseek-ai/") {
+                "builtin".to_string()
+            } else {
+                "extension".to_string()
+            },
         });
     }
 
@@ -351,6 +358,7 @@ pub fn list_plugins() -> Vec<PluginInfo> {
                 skills: vec![],
                 source: "local".to_string(),
                 dir: Some(dir.to_string_lossy().into_owned()),
+                kind: "selfdev".to_string(),
             });
         }
     }
@@ -379,6 +387,7 @@ pub fn list_plugins() -> Vec<PluginInfo> {
                 skills: vec![],
                 source: "harness".to_string(),
                 dir: Some(dir.to_string_lossy().into_owned()),
+                kind: "selfdev".to_string(),
             });
         }
     }
@@ -400,6 +409,7 @@ pub fn list_plugins() -> Vec<PluginInfo> {
                     skills: vec![],
                     source: "preset".to_string(),
                     dir: None,
+                    kind: "builtin".to_string(),
                 });
             }
         }
@@ -639,7 +649,7 @@ fn patch_has_insert(id: &str) -> bool {
     })
 }
 
-fn remove_insert_entry(id: &str) -> Result<(), String> {
+fn remove_patch_entry(id: &str, block_key: &str) -> Result<(), String> {
     let patch = patch_path();
     let text = std::fs::read_to_string(&patch).map_err(|e| e.to_string())?;
     let mut lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
@@ -648,19 +658,23 @@ fn remove_insert_entry(id: &str) -> Result<(), String> {
         let t = lines[i].trim();
         if t == format!("- id: {id}") || t == format!("- id: \"{id}\"") {
             lines.remove(i);
-            if i < lines.len() && lines[i].trim_start().starts_with("name:") {
+            if block_key == "insert"
+                && i < lines.len()
+                && lines[i].trim_start().starts_with("name:")
+            {
                 lines.remove(i);
             }
             continue;
         }
         i += 1;
     }
-    // 清理因此变成空壳的 "- insert:" 行
+    // 清理因此变成空壳的 "- <block_key>:" 行
+    let block_line = format!("- {block_key}:");
     let mut cleaned: Vec<String> = Vec::new();
     let mut idx = 0;
     while idx < lines.len() {
         let t = lines[idx].trim();
-        if t == "- insert:" {
+        if t == block_line {
             let mut next = idx + 1;
             while next < lines.len() && lines[next].trim().is_empty() {
                 next += 1;
@@ -678,6 +692,14 @@ fn remove_insert_entry(id: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn remove_insert_entry(id: &str) -> Result<(), String> {
+    remove_patch_entry(id, "insert")
+}
+
+fn remove_disable_entry(id: &str) -> Result<(), String> {
+    remove_patch_entry(id, "disable")
+}
+
 fn append_insert_entry(id: &str, entry: &str) -> Result<(), String> {
     let patch = patch_path();
     let mut text = std::fs::read_to_string(&patch).unwrap_or_default();
@@ -691,13 +713,91 @@ fn append_insert_entry(id: &str, entry: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn append_disable_entry(id: &str) -> Result<(), String> {
+    let patch = patch_path();
+    let mut text = std::fs::read_to_string(&patch).unwrap_or_default();
+    if !text.ends_with('\n') {
+        text.push('\n');
+    }
+    text.push_str(&format!("- disable:\n    - id: {id}\n"));
+    crate::prefs::atomic_write(&patch, &text)?;
+    Ok(())
+}
+
+fn patch_has_disable(id: &str) -> bool {
+    let Ok(text) = std::fs::read_to_string(patch_path()) else {
+        return false;
+    };
+    let mut in_disable = false;
+    for l in text.lines() {
+        let t = l.trim();
+        if t == "- disable:" {
+            in_disable = true;
+            continue;
+        }
+        if in_disable {
+            if t == format!("- id: {id}") || t == format!("- id: \"{id}\"") {
+                return true;
+            }
+            if t.starts_with("- ") && !t.starts_with("- id:") {
+                in_disable = false;
+            }
+        }
+    }
+    false
+}
+
+fn verify_profile() -> Result<(), String> {
+    let dsh = crate::harness::find_dsh().map_err(|e| e.to_string())?;
+    let home = dsh_home();
+    use std::os::windows::process::CommandExt;
+    let out = std::process::Command::new("cmd")
+        .args(["/C", &dsh, "--profile", "web", "--dump-config"])
+        .env("DSH_HOME", &home)
+        .creation_flags(0x0800_0000)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "DSH 配置校验失败：{}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ))
+    }
+}
+
 pub fn set_plugin_enabled(id: &str, enabled: bool) -> Result<(), String> {
     if !valid_plugin_id(id) {
         return Err("非法插件 ID".to_string());
     }
+    if id.starts_with("@deepseek-ai/") {
+        // 本家（内置）：通过 disable 条目控制，写入后交给 dsh 校验，失败自动回滚
+        let patch = patch_path();
+        let before = std::fs::read_to_string(&patch).unwrap_or_default();
+        let apply = || -> Result<(), String> {
+            if enabled {
+                if patch_has_disable(id) {
+                    remove_disable_entry(id)?;
+                }
+            } else if !patch_has_disable(id) {
+                append_disable_entry(id)?;
+            }
+            Ok(())
+        };
+        if let Err(e) = apply() {
+            return Err(e);
+        }
+        if let Err(e) = verify_profile() {
+            let _ = crate::prefs::atomic_write(&patch, &before);
+            return Err(e);
+        }
+        return Ok(());
+    }
+    // 本地自研插件：insert 条目
     let dir = profile_dir().join("plugins").join(id);
     if !dir.is_dir() {
-        return Err("仅支持启用/禁用「本地导入」插件；npm 插件请使用市场卸载".to_string());
+        return Err("仅支持启用/禁用「自研本地」插件；扩展请使用卸载/更新".to_string());
     }
     let entry = plugin_entry(&dir);
     if enabled {
