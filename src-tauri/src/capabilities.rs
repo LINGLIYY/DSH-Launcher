@@ -298,7 +298,11 @@ pub fn list_plugins() -> Vec<PluginInfo> {
                             skills: vec![],
                             source: "bundle".to_string(),
                             dir: None,
-                            kind: "builtin".to_string(),
+                            kind: if name.starts_with("@deepseek-ai/") {
+                                "builtin".to_string()
+                            } else {
+                                "extension".to_string()
+                            },
                         });
                     }
                 }
@@ -409,7 +413,7 @@ pub fn list_plugins() -> Vec<PluginInfo> {
                     skills: vec![],
                     source: "preset".to_string(),
                     dir: None,
-                    kind: "builtin".to_string(),
+                    kind: "extension".to_string(),
                 });
             }
         }
@@ -821,15 +825,37 @@ pub fn remove_plugin(id: &str) -> Result<String, String> {
         return Ok(format!("已卸载本地插件 {id}"));
     }
     let pkg = profile_dir().join("package.json");
-    let is_dep = std::fs::read_to_string(&pkg)
-        .ok()
-        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
-        .and_then(|v| v.get("dependencies").cloned())
-        .and_then(|d| d.as_object().cloned())
-        .map(|d| d.contains_key(id))
-        .unwrap_or(false);
-    if is_dep {
-        return run_dsh_plugin(&["remove", id]);
+    let mut in_bundles = false;
+    let mut is_dep = false;
+    if let Ok(txt) = std::fs::read_to_string(&pkg) {
+        if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&txt) {
+            if let Some(arr) = v
+                .pointer_mut("/dsh/profile/bundles")
+                .and_then(|x| x.as_array_mut())
+            {
+                let before = arr.len();
+                arr.retain(|b| b.as_str() != Some(id));
+                in_bundles = arr.len() < before;
+            }
+            if in_bundles {
+                let text = serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?;
+                crate::prefs::atomic_write(&pkg, &text)?;
+            }
+            if let Some(d) = v.get("dependencies").and_then(|x| x.as_object()) {
+                is_dep = d.contains_key(id);
+            }
+        }
+    }
+    if in_bundles || is_dep {
+        let mut msgs = Vec::new();
+        if in_bundles {
+            msgs.push("已从 bundles 注册中移除".to_string());
+        }
+        if is_dep {
+            let r = run_dsh_plugin(&["remove", id])?;
+            msgs.push(r);
+        }
+        return Ok(msgs.join("；"));
     }
     Err("未找到可卸载的插件".to_string())
 }

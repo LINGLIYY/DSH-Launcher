@@ -1441,7 +1441,7 @@ function renderPlugins(){
     const card=document.createElement("div");card.className="cap-card";
     const tagCls=kindCls[p.kind]||"tag-third";
     const canToggle=p.kind==="builtin"||p.source==="local";
-    const canUninstall=p.kind==="extension"||p.source==="local";
+    const canUninstall=(p.kind==="extension"&&p.source!=="preset")||p.source==="local";
     const canCheck=p.kind==="extension"&&p.source==="npm";
     card.innerHTML=`
       <div class="cc-head">
