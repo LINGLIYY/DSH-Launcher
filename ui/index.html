@@ -18,7 +18,7 @@
             --safe-padding: 16px;
             --gap-block: 12px;
             --kanban-width: 340px;
-            --kanban-opacity: 0.32;
+            --kanban-opacity: 0.38;
             --kanban-position: rb;
         }
 
@@ -28,7 +28,7 @@
 
         .kanban-overlay {
             position: fixed; right: 24px; bottom: 24px; width: var(--kanban-width); height: auto;
-            opacity: var(--kanban-opacity); pointer-events: none; z-index: 0;
+            opacity: var(--kanban-opacity); pointer-events: none; z-index: 10;
             transition: opacity 0.2s, width 0.2s, left 0.2s, right 0.2s;
         }
         .kanban-overlay.lb { right: auto; left: 24px; }
@@ -131,8 +131,8 @@
             <div class="setting-desc">调整角色画面宽度</div>
         </div>
         <div class="setting-item">
-            <label>透明度 <span id="opacityValue">0.32</span></label>
-            <input type="range" id="opacitySlider" min="10" max="60" value="32">
+            <label>透明度 <span id="opacityValue">0.38</span></label>
+            <input type="range" id="opacitySlider" min="10" max="60" value="38">
             <div class="setting-desc">数值越高画面越清晰</div>
         </div>
         <div class="setting-item">
@@ -264,6 +264,12 @@
                 document.getElementById('pathText').textContent = '工作区：' + s.workspace;
                 document.getElementById('urlLink').textContent = s.url;
                 applyStatus(s.status);
+                try {
+                    const sessions = await invoke('list_sessions', { filter: '' });
+                    appendLog('info', '自检: 会话 ' + sessions.length + ' 个');
+                } catch (e) {
+                    appendLog('err', '自检会话失败: ' + String(e));
+                }
             } catch (e) {
                 appendLog('err', String(e));
             }
@@ -424,7 +430,7 @@
             const sizeValueText = document.getElementById('sizeValue');
             const opacityValueText = document.getElementById('opacityValue');
             const posButtons = document.querySelectorAll('.pos-btn');
-            const DEFAULT_CONFIG = { width: 340, opacity: 0.32, position: 'rb' };
+            const DEFAULT_CONFIG = { width: 340, opacity: 0.38, position: 'rb' };
             let currentConfig = { ...DEFAULT_CONFIG };
             try {
                 const saved = localStorage.getItem('dsh_kanban_config');
