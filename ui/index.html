@@ -405,7 +405,7 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
 
       <!-- ===== 多端管理 ===== -->
       <div class="settings-section" data-sec="endpoints">
-        <div class="settings-hint">多端管理：统一管理本机 Windows、WSL 各发行版、远程 SSH 中的 DSH 实例。每个端独立配置、独立会话、独立插件，切换端后控制台、会话、能力中心自动切换到对应端的数据。</div>
+        <div class="settings-hint">多端管理：统一管理本机 Windows、WSL 各发行版、远程 SSH 中的 DSH 实例。当前版本对 WSL / SSH 端支持启停与连通检测；会话、插件、技能等数据读取仅对接本机 Windows 的 DSH_HOME。</div>
         <div style="display:flex;gap:6px;margin-bottom:12px">
           <button class="btn-small" id="btnScanEndpoints">自动扫描 WSL</button>
           <button class="btn-small" id="btnRefreshEndpoints">刷新状态</button>
@@ -695,7 +695,7 @@ body{background:var(--bg-window);overflow-x:hidden;position:relative;min-height:
   <!-- DSH 能力中心 -->
   <div class="tab-content" data-tab="capability">
     <div class="capability-wrap">
-      <div class="cap-hint">以下为当前端 DSH 基座的能力管理。插件是能力载体，技能与 MCP 是插件暴露的能力输出。切换端后数据自动切换。</div>
+      <div class="cap-hint">以下能力读取本机 Windows 的 DSH_HOME（`%APPDATA%\dsh-desktop\harness`）。插件是能力载体，技能与 MCP 是插件暴露的能力输出；WSL / SSH 端暂不支持此处数据读取。</div>
       <div class="sub-tab-group">
         <div class="sub-tab-btn active" data-sub="plugin">插件管理</div>
         <div class="sub-tab-btn" data-sub="skill">技能 Skill</div>
@@ -828,9 +828,9 @@ function updateEndpointUI(){
   // 下拉列表
   const dd=$("endpointDropdown");
   dd.innerHTML=endpoints.map(e=>`
-    <div class="ep-item ${e.active?"active":""}" data-id="${e.id}">
-      <span>${e.name}</span>
-      <span class="ep-type">${typeLabel(e.type)}</span>
+    <div class="ep-item ${e.active?"active":""}" data-id="${escapeHtml(e.id)}">
+      <span>${escapeHtml(e.name)}</span>
+      <span class="ep-type">${escapeHtml(typeLabel(e.type))}</span>
     </div>`).join("")+`<div class="ep-manage" id="epManageBtn">管理多端设置...</div>`;
   dd.querySelectorAll(".ep-item").forEach(item=>{
     item.onclick=()=>{setActiveEndpoint(item.dataset.id);dd.classList.remove("show")};
@@ -848,22 +848,22 @@ function renderEndpointList(){
     const statusTxt=e.status==="running"?"运行中":e.status==="error"?"异常":e.status==="unknown"?"未知":"已停止";
     card.innerHTML=`
       <div class="ec-head">
-        <div><span class="ec-name">${e.name}</span>
-          <span class="ec-type ${typeTagClass(e.type)}">${typeLabel(e.type)}</span>
+        <div><span class="ec-name">${escapeHtml(e.name)}</span>
+          <span class="ec-type ${typeTagClass(e.type)}">${escapeHtml(typeLabel(e.type))}</span>
           ${e.active?'<span class="ec-type tag-builtin">当前</span>':""}</div>
         <span class="status-badge ${statusCls}">${statusTxt}</span>
       </div>
       <div class="ec-meta">
-        类型：${typeLabel(e.type)}${e.distro?`（${e.distro}）`:""}${e.ssh?` · ${e.ssh}`:""}<br>
-        DSH 路径：${e.path}<br>
-        端口：${e.port} · 版本：${e.version||"未检测"}<br>
-        工作目录：${e.workspace||"未设置"}
+        类型：${escapeHtml(typeLabel(e.type))}${e.distro?`（${escapeHtml(e.distro)}）`:""}${e.ssh?` · ${escapeHtml(e.ssh)}`:""}<br>
+        DSH 路径：${escapeHtml(e.path)}<br>
+        端口：${escapeHtml(String(e.port))} · 版本：${escapeHtml(e.version||"未检测")}<br>
+        工作目录：${escapeHtml(e.workspace||"未设置")}
       </div>
       <div class="ec-actions">
-        ${e.active?"":`<button class="btn-small" data-act="activate" data-id="${e.id}">切换到此端</button>`}
-        <button class="btn-small" data-act="edit" data-id="${e.id}">编辑</button>
-        <button class="btn-small" data-act="ping" data-id="${e.id}">检测连通</button>
-        ${e.type==="windows"?"":`<button class="btn-danger" data-act="remove" data-id="${e.id}">删除</button>`}
+        ${e.active?"":`<button class="btn-small" data-act="activate" data-id="${escapeHtml(e.id)}">切换到此端</button>`}
+        <button class="btn-small" data-act="edit" data-id="${escapeHtml(e.id)}">编辑</button>
+        <button class="btn-small" data-act="ping" data-id="${escapeHtml(e.id)}">检测连通</button>
+        ${e.type==="windows"?"":`<button class="btn-danger" data-act="remove" data-id="${escapeHtml(e.id)}">删除</button>`}
       </div>`;
     box.appendChild(card);
   });
@@ -1232,12 +1232,12 @@ $("btnPickWorkspace").onclick=async function(){
 async function loadSessions(){
   const list=await invoke("list_sessions",{filter:($("sessionSearch")?.value||""),endpoint_id:currentEndpoint().id});
   const box=$("sessionList");
-  if(!list||!list.length){box.innerHTML='<div class="session-empty" style="padding:20px;text-align:center;font-size:12px">当前端暂无会话记录</div>';return}
+  if(!list||!list.length){box.innerHTML='<div class="session-empty" style="padding:20px;text-align:center;font-size:12px">本机 Windows DSH 暂无会话记录</div>';return}
   box.innerHTML="";
   list.forEach(s=>{
     const div=document.createElement("div");div.className="session-item";
-    div.innerHTML=`<div class="s-title">${s.title||"未命名会话"}</div>
-      <div class="s-meta">${s.workspace||""} · ${fmtTime(s.mtime_ms)} · ${(s.size/1024).toFixed(1)}KB</div>`;
+    div.innerHTML=`<div class="s-title">${escapeHtml(s.title||"未命名会话")}</div>
+      <div class="s-meta">${escapeHtml(s.workspace||"")} · ${fmtTime(s.mtime_ms)} · ${(s.size/1024).toFixed(1)}KB</div>`;
     div.onclick=()=>{currentSessionTitle=s.title||"未命名会话";loadSessionDetail(s.id)};
     box.appendChild(div);
   });
@@ -1296,7 +1296,7 @@ async function loadSessionDetail(id){
   const blocks=await invoke("get_session",{id,endpoint_id:currentEndpoint().id});
   const box=$("sessionDetail");
   if(!blocks||!blocks.length){box.innerHTML='<div class="session-empty">无法加载会话内容</div>';return}
-  box.innerHTML=`<div style="margin-bottom:10px;font-size:12px;color:var(--text-secondary)">会话 ID：${id}（端：${currentEndpoint().name}）</div>`;
+  box.innerHTML=`<div style="margin-bottom:10px;font-size:12px;color:var(--text-secondary)">会话 ID：${escapeHtml(id)}（端：${escapeHtml(currentEndpoint().name)}）</div>`;
   blocks.forEach(b=>{const d=document.createElement("div");d.className="msg "+(b.kind==="user"?"user":b.kind==="tool"?"tool":"assistant");d.textContent=b.text;box.appendChild(d)});
 }
 
@@ -1590,16 +1590,16 @@ function renderMcp(){
     const badgeTxt=m.status==="connected"?"已连接":m.status==="error"?"连接异常":"未连接";
     card.innerHTML=`
       <div class="cc-head">
-        <div><span class="cc-name">${m.name}</span><span class="cc-ver">${m.protocol.toUpperCase()}</span></div>
+        <div><span class="cc-name">${escapeHtml(m.name)}</span><span class="cc-ver">${escapeHtml((m.protocol||"").toUpperCase())}</span></div>
         <span class="status-badge ${badgeCls}">${badgeTxt}</span>
       </div>
-      <div class="cc-desc">${m.desc}</div>
-      <div class="cc-meta">ID: ${m.id} · 端口: ${m.port} · 地址: ${m.url}</div>
+      <div class="cc-desc">${escapeHtml(m.desc)}</div>
+      <div class="cc-meta">ID: ${escapeHtml(m.id)} · 端口: ${escapeHtml(m.port)} · 地址: ${escapeHtml(m.url)}</div>
       <div class="cc-actions">
-        <button class="btn-small" data-act="toggle" data-id="${m.id}">${m.status==="connected"?"断开":"连接"}</button>
-        <button class="btn-small" data-act="test" data-id="${m.id}">测试连接</button>
-        <button class="btn-small" data-act="config" data-id="${m.id}">配置</button>
-        <button class="btn-danger" data-act="remove" data-id="${m.id}">删除</button>
+        <button class="btn-small" data-act="toggle" data-id="${escapeHtml(m.id)}">${m.status==="connected"?"断开":"连接"}</button>
+        <button class="btn-small" data-act="test" data-id="${escapeHtml(m.id)}">测试连接</button>
+        <button class="btn-small" data-act="config" data-id="${escapeHtml(m.id)}">配置</button>
+        <button class="btn-danger" data-act="remove" data-id="${escapeHtml(m.id)}">删除</button>
       </div>`;
     box.appendChild(card);
   });
@@ -1712,9 +1712,9 @@ $("btnExportConfig")?.addEventListener("click",async()=>{
 });
 $("btnImportConfig")?.addEventListener("click",async()=>{
   try{
-    const p=await invoke("pick_file",{filters:[{name:"JSON",extensions:["json"]}]});
-    if(!p)return;
-    const data=JSON.parse(await invoke("read_text_file",{path:p}));
+    const content=await invoke("pick_and_read_config");
+    if(!content)return;
+    const data=JSON.parse(content);
     if(data.launcher_prefs){
       if(data.launcher_prefs.kanban)localStorage.setItem(KANBAN_KEY,data.launcher_prefs.kanban);
       if(data.launcher_prefs.endpoints)localStorage.setItem(EP_KEY,data.launcher_prefs.endpoints);

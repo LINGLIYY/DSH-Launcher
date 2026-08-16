@@ -61,9 +61,40 @@ fn data_file(session_dir: &Path) -> Option<PathBuf> {
     None
 }
 
+fn valid_id(id: &str) -> bool {
+    !id.is_empty()
+        && id != "."
+        && id != ".."
+        && !id.contains('/')
+        && !id.contains('\\')
+        && !id.contains(':')
+        && id.chars().all(|c| !c.is_control())
+}
+
+const MAX_SESSION_BYTES: u64 = 64 * 1024 * 1024;
+
 fn decode(path: &Path) -> std::io::Result<Vec<u8>> {
     let file = std::fs::File::open(path)?;
-    zstd::stream::decode_all(file)
+    if file.metadata()?.len() > MAX_SESSION_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "session file too large",
+        ));
+    }
+    use std::io::Read;
+    let decoder = zstd::stream::read::Decoder::new(file)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    let mut out = Vec::new();
+    decoder
+        .take(MAX_SESSION_BYTES + 1)
+        .read_to_end(&mut out)?;
+    if out.len() as u64 > MAX_SESSION_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "session decoded too large",
+        ));
+    }
+    Ok(out)
 }
 
 fn truncate_chars(s: &str, max: usize) -> String {
@@ -227,6 +258,9 @@ pub fn search(query: &str, limit: usize) -> Vec<SessionHit> {
 }
 
 fn find_file_by_id(id: &str) -> Result<PathBuf, String> {
+    if !valid_id(id) {
+        return Err("非法会话 ID".to_string());
+    }
     let root = sessions_root();
     let entries =
         std::fs::read_dir(&root).map_err(|e| e.to_string())?;
@@ -242,6 +276,9 @@ fn find_file_by_id(id: &str) -> Result<PathBuf, String> {
 }
 
 fn find_dir_by_id(id: &str) -> Result<PathBuf, String> {
+    if !valid_id(id) {
+        return Err("非法会话 ID".to_string());
+    }
     let root = sessions_root();
     let entries =
         std::fs::read_dir(&root).map_err(|e| e.to_string())?;
@@ -460,6 +497,9 @@ pub fn list_trash() -> Vec<TrashInfo> {
 }
 
 fn find_trash_dir(id: &str) -> Result<PathBuf, String> {
+    if !valid_id(id) {
+        return Err("非法会话 ID".to_string());
+    }
     let root = trash_root();
     let entries = std::fs::read_dir(&root).map_err(|e| e.to_string())?;
     for entry in entries.flatten() {
@@ -482,11 +522,14 @@ fn find_trash_dir(id: &str) -> Result<PathBuf, String> {
 pub fn restore_by_id(id: &str) -> Result<String, String> {
     let trash_dir = find_trash_dir(id)?;
     let (_, workspace) = read_trash_meta(&trash_dir);
-    let workspace = if workspace.is_empty() {
+    let mut workspace = if workspace.is_empty() {
         "--restored--".to_string()
     } else {
         workspace
     };
+    if !valid_id(&workspace) {
+        workspace = "--restored--".to_string();
+    }
     let root = sessions_root();
     let target = root.join(&workspace).join(id);
     if target.exists() {

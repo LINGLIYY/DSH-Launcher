@@ -211,7 +211,7 @@ pub fn import_plugin(src: &str) -> Result<String, String> {
     text.push_str(&format!(
         "- insert:\n    - id: {name}\n      name: ./plugins/{name}/{entry}\n"
     ));
-    std::fs::write(&patch, text).map_err(|e| e.to_string())?;
+    crate::prefs::atomic_write(&patch, &text)?;
     Ok(name)
 }
 
@@ -523,6 +523,48 @@ pub fn list_mcp() -> Vec<McpInfo> {
     Vec::new()
 }
 
+fn valid_plugin_id(id: &str) -> bool {
+    if id.is_empty() || id == "." || id == ".." {
+        return false;
+    }
+    let mut parts = id.split('/');
+    let first = parts.next().unwrap_or("");
+    let second = parts.next();
+    if parts.next().is_some() {
+        return false;
+    }
+    for s in id.split('/') {
+        if s.is_empty() || s == "." || s == ".." {
+            return false;
+        }
+        if !s
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '@' | '-' | '_' | '.'))
+        {
+            return false;
+        }
+    }
+    if first.starts_with('@') {
+        second.is_some()
+    } else {
+        second.is_none()
+    }
+}
+
+fn safe_target(t: &str) -> bool {
+    if t.is_empty() || t.starts_with('-') {
+        return false;
+    }
+    if !t
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '@' | '/' | '-' | '_' | '.' | ':'))
+    {
+        return false;
+    }
+    let body = t.split_once(':').map(|(_, b)| b).unwrap_or(t);
+    body.split('/').all(|s| !s.is_empty() && s != "." && s != "..")
+}
+
 fn run_dsh_plugin(args: &[&str]) -> Result<String, String> {
     let dsh = crate::harness::find_dsh().map_err(|e| e.to_string())?;
     let home = dsh_home();
@@ -556,15 +598,15 @@ fn run_dsh_plugin(args: &[&str]) -> Result<String, String> {
 }
 
 pub fn install_market_plugin(target: &str) -> Result<String, String> {
-    if target.trim().is_empty() {
-        return Err("安装目标为空".to_string());
+    if !safe_target(target.trim()) {
+        return Err("非法的安装目标".to_string());
     }
     run_dsh_plugin(&["add", target.trim()])
 }
 
 pub fn uninstall_market_plugin(target: &str) -> Result<String, String> {
-    if target.trim().is_empty() {
-        return Err("卸载目标为空".to_string());
+    if !safe_target(target.trim()) {
+        return Err("非法的卸载目标".to_string());
     }
     run_dsh_plugin(&["remove", target.trim()])
 }
@@ -618,7 +660,7 @@ fn remove_insert_entry(id: &str) -> Result<(), String> {
         }
         idx += 1;
     }
-    std::fs::write(&patch, cleaned.join("\n") + "\n").map_err(|e| e.to_string())?;
+    crate::prefs::atomic_write(&patch, &(cleaned.join("\n") + "\n"))?;
     Ok(())
 }
 
@@ -631,11 +673,14 @@ fn append_insert_entry(id: &str, entry: &str) -> Result<(), String> {
     text.push_str(&format!(
         "- insert:\n    - id: {id}\n      name: ./plugins/{id}/{entry}\n"
     ));
-    std::fs::write(&patch, text).map_err(|e| e.to_string())?;
+    crate::prefs::atomic_write(&patch, &text)?;
     Ok(())
 }
 
 pub fn set_plugin_enabled(id: &str, enabled: bool) -> Result<(), String> {
+    if !valid_plugin_id(id) {
+        return Err("非法插件 ID".to_string());
+    }
     let dir = profile_dir().join("plugins").join(id);
     if !dir.is_dir() {
         return Err("仅支持启用/禁用「本地导入」插件；npm 插件请使用市场卸载".to_string());
@@ -652,6 +697,9 @@ pub fn set_plugin_enabled(id: &str, enabled: bool) -> Result<(), String> {
 }
 
 pub fn remove_plugin(id: &str) -> Result<String, String> {
+    if !valid_plugin_id(id) {
+        return Err("非法插件 ID".to_string());
+    }
     let local = profile_dir().join("plugins").join(id);
     if local.is_dir() {
         remove_insert_entry(id)?;
@@ -673,6 +721,9 @@ pub fn remove_plugin(id: &str) -> Result<String, String> {
 }
 
 pub fn open_plugin_folder(id: &str) -> Result<(), String> {
+    if !valid_plugin_id(id) {
+        return Err("非法插件 ID".to_string());
+    }
     let candidates = [
         profile_dir().join("plugins").join(id),
         dsh_home().join("plugins").join(id),

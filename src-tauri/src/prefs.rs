@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(default)]
@@ -106,9 +106,18 @@ pub fn load() -> LauncherPrefs {
 
 pub fn save(prefs: &LauncherPrefs) -> Result<(), String> {
     let path = prefs_path();
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
     let text = serde_json::to_string_pretty(prefs).map_err(|e| e.to_string())?;
-    std::fs::write(&path, text).map_err(|e| e.to_string())
+    atomic_write(&path, &text)
+}
+
+pub fn atomic_write(path: &Path, text: &str) -> Result<(), String> {
+    let parent = path.parent().ok_or_else(|| "无父目录".to_string())?;
+    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let name = path
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "tmp".to_string());
+    let tmp = parent.join(format!(".{name}.tmp"));
+    std::fs::write(&tmp, text).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, path).map_err(|e| e.to_string())
 }

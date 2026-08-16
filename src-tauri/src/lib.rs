@@ -28,6 +28,7 @@ pub struct HarnessInner {
     pub logs: VecDeque<LogLine>,
     pub wsl_distro: Option<String>,
     pub wsl_port: Option<u16>,
+    pub readers: Vec<std::thread::JoinHandle<()>>,
 }
 
 impl HarnessInner {
@@ -45,6 +46,7 @@ impl HarnessInner {
             logs: VecDeque::new(),
             wsl_distro: None,
             wsl_port: None,
+            readers: Vec::new(),
         }
     }
 }
@@ -119,6 +121,10 @@ fn open_browser(state: tauri::State<'_, HarnessState>) -> Result<(), String> {
 
 #[tauri::command]
 fn open_external(url: String) -> Result<(), String> {
+    let lower = url.to_lowercase();
+    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+        return Err("仅支持打开 http/https 链接".to_string());
+    }
     harness::open_url(&url)
 }
 
@@ -197,8 +203,28 @@ async fn save_text_file(
 }
 
 #[tauri::command]
-fn read_text_file(path: String) -> Result<String, String> {
-    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+async fn pick_and_read_config(app: AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let picked = app
+        .dialog()
+        .file()
+        .add_filter("JSON", &["json"])
+        .blocking_pick_file();
+    if let Some(fp) = picked {
+        if let Ok(path) = fp.into_path() {
+            let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+            if !meta.is_file() {
+                return Err("所选路径不是文件".to_string());
+            }
+            if meta.len() > 10 * 1024 * 1024 {
+                return Err("文件过大，最多 10MB".to_string());
+            }
+            return std::fs::read_to_string(&path)
+                .map(Some)
+                .map_err(|e| e.to_string());
+        }
+    }
+    Ok(None)
 }
 
 #[tauri::command]
@@ -215,19 +241,43 @@ fn open_path(path: String) -> Result<(), String> {
     harness::open_path(std::path::Path::new(&dir))
 }
 
+fn is_within(path: &std::path::Path, root: &std::path::Path) -> bool {
+    match (path.canonicalize(), root.canonicalize()) {
+        (Ok(p), Ok(r)) => p.starts_with(r),
+        _ => false,
+    }
+}
+
+fn open_dir_allowed(path: &std::path::Path) -> bool {
+    let appdata = std::env::var("APPDATA").unwrap_or_else(|_| "C:\\".to_string());
+    let roots = [
+        PathBuf::from(&appdata).join("dsh-desktop"),
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("C:\\")),
+    ];
+    roots.iter().any(|r| is_within(path, r))
+}
+
 #[tauri::command]
 fn open_dir(path: String) -> Result<(), String> {
-    harness::open_path(std::path::Path::new(&path))
+    let p = std::path::Path::new(&path);
+    if !open_dir_allowed(p) {
+        return Err("仅允许打开启动器数据目录或项目工作区".to_string());
+    }
+    harness::open_path(p)
 }
 
 #[tauri::command]
-fn list_sessions(filter: Option<String>) -> Result<Vec<sessions::SessionInfo>, String> {
-    Ok(sessions::list(filter.unwrap_or_default().as_str()))
+async fn list_sessions(filter: Option<String>) -> Result<Vec<sessions::SessionInfo>, String> {
+    tauri::async_runtime::spawn_blocking(move || sessions::list(filter.unwrap_or_default().as_str()))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn search_sessions(query: String, limit: Option<usize>) -> Vec<sessions::SessionHit> {
-    sessions::search(&query, limit.unwrap_or(50))
+async fn search_sessions(query: String, limit: Option<usize>) -> Vec<sessions::SessionHit> {
+    tauri::async_runtime::spawn_blocking(move || sessions::search(&query, limit.unwrap_or(50)))
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -300,7 +350,7 @@ fn get_dsh_settings() -> Result<String, String> {
 #[tauri::command]
 fn set_dsh_settings(text: String) -> Result<(), String> {
     let p = std::path::Path::new(&default_dsh_home()).join("settings.yaml");
-    std::fs::write(&p, text).map_err(|e| e.to_string())
+    prefs::atomic_write(&p, &text)
 }
 
 #[tauri::command]
@@ -318,7 +368,7 @@ fn set_cordis_patch(text: String) -> Result<(), String> {
         .join("profiles")
         .join("web")
         .join("cordis.patch.yml");
-    std::fs::write(&p, text).map_err(|e| e.to_string())
+    prefs::atomic_write(&p, &text)
 }
 
 #[tauri::command]
@@ -394,33 +444,45 @@ fn clear_launcher_cache(state: tauri::State<'_, PrefsState>) -> Result<(), Strin
 }
 
 #[tauri::command]
-fn get_session(id: String) -> Result<Vec<sessions::Block>, String> {
-    sessions::render_by_id(&id)
+async fn get_session(id: String) -> Result<Vec<sessions::Block>, String> {
+    tauri::async_runtime::spawn_blocking(move || sessions::render_by_id(&id))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn delete_session(id: String) -> Result<String, String> {
-    sessions::delete_by_id(&id)
+async fn delete_session(id: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || sessions::delete_by_id(&id))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn list_trash() -> Vec<sessions::TrashInfo> {
-    sessions::list_trash()
+async fn list_trash() -> Vec<sessions::TrashInfo> {
+    tauri::async_runtime::spawn_blocking(sessions::list_trash)
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]
-fn restore_session(id: String) -> Result<String, String> {
-    sessions::restore_by_id(&id)
+async fn restore_session(id: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || sessions::restore_by_id(&id))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn purge_trash(id: String) -> Result<(), String> {
-    sessions::purge_by_id(&id)
+async fn purge_trash(id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || sessions::purge_by_id(&id))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn empty_trash() -> Result<usize, String> {
-    sessions::empty_trash()
+async fn empty_trash() -> Result<usize, String> {
+    tauri::async_runtime::spawn_blocking(sessions::empty_trash)
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -704,7 +766,7 @@ pub fn run() {
             pick_workspace,
             pick_file,
             save_text_file,
-            read_text_file,
+            pick_and_read_config,
             open_path,
             open_dir,
             list_sessions,

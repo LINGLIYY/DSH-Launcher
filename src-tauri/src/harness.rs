@@ -64,6 +64,10 @@ fn http_ready(url: &str) -> bool {
     String::from_utf8_lossy(&buf).contains("__DSH_BOOT__")
 }
 
+fn sh_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
 fn set_status(app: &AppHandle, status: &str, text: &str) {
     {
         let state = app.state::<HarnessState>();
@@ -205,9 +209,15 @@ pub async fn start(
         let d = distro.clone().ok_or_else(|| "WSL 发行版名称为空".to_string())?;
         let bind_host = "0.0.0.0";
         let script = if workspace == "~" {
-            format!("'{}' web --host {} --port {}", dsh_path, bind_host, port)
+            format!("{} web --host {} --port {}", sh_quote(&dsh_path), bind_host, port)
         } else {
-            format!("cd '{}' && '{}' web --host {} --port {}", workspace, dsh_path, bind_host, port)
+            format!(
+                "cd {} && {} web --host {} --port {}",
+                sh_quote(&workspace),
+                sh_quote(&dsh_path),
+                bind_host,
+                port
+            )
         };
         let mut cmd = std::process::Command::new("wsl");
         cmd.args(["-d", &d, "--", "bash", "-lc", &script]);
@@ -245,8 +255,18 @@ pub async fn start(
         inner.child = Some(child);
     }
 
-    if let Some(out) = stdout { spawn_reader(app.clone(), out, "info"); }
-    if let Some(err) = stderr { spawn_reader(app.clone(), err, "err"); }
+    let mut reader_handles = Vec::new();
+    if let Some(out) = stdout {
+        reader_handles.push(spawn_reader(app.clone(), out, "info"));
+    }
+    if let Some(err) = stderr {
+        reader_handles.push(spawn_reader(app.clone(), err, "err"));
+    }
+    {
+        let state = app.state::<HarnessState>();
+        let mut inner = state.inner.lock().unwrap();
+        inner.readers.extend(reader_handles);
+    }
 
     let app2 = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -303,7 +323,7 @@ fn spawn_reader<R: std::io::Read + Send + 'static>(
     app: AppHandle,
     reader: R,
     level: &'static str,
-) {
+) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let mut buf = BufReader::new(reader);
         let mut line = String::new();
@@ -315,7 +335,7 @@ fn spawn_reader<R: std::io::Read + Send + 'static>(
                 Err(_) => break,
             }
         }
-    });
+    })
 }
 
 pub async fn stop(app: AppHandle) -> Result<(), String> {
@@ -345,6 +365,14 @@ pub async fn stop(app: AppHandle) -> Result<(), String> {
         let _ = std::process::Command::new("taskkill")
             .args(["/PID", &pid.to_string(), "/T", "/F"])
             .output();
+    }
+    let readers = {
+        let state = app.state::<HarnessState>();
+        let mut inner = state.inner.lock().unwrap();
+        std::mem::take(&mut inner.readers)
+    };
+    for r in readers {
+        let _ = r.join();
     }
     append_log(&app, "info", "Harness 已停止");
     set_status(&app, "stopped", "已停止");
