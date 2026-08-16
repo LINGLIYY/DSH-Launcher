@@ -60,6 +60,9 @@ python launch.py
 1. 安装托盘依赖（只需一次）：`pip install -r requirements-launcher.txt`
 2. 双击 **`启动 DSH 托盘.bat`**，之后可通过系统托盘图标随时启动/停止、打开界面或退出。
 
+托盘窗口还内置**会话管理**页：按工作区分组浏览 DSH 会话、搜索过滤、查看对话内容、
+删除会话（移入 `sessions_trash` 备份目录，可恢复）。启停操作均在后台静默执行，不会卡住界面。
+
 > 提示：会话记忆/设置存放在 `%APPDATA%\dsh-desktop\harness`，卸载或重装程序都不会影响它。
 
 ## 加入社区

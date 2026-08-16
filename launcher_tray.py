@@ -3,8 +3,9 @@
 """
 DSH Desktop 托盘 + 控制台窗口模式。
 
-本模块不依赖 dsh 主程运行，只负责：启动/停止 Harness、状态显示、日志、
-系统托盘、轻量控制台窗口。由 launch.py 的 --tray 参数调用。
+本模块不依赖 dsh 主程运行，只负责：启动/停止 Harness（后台静默执行）、
+状态显示、日志、系统托盘、轻量控制台窗口、会话管理（浏览/搜索/查看/删除备份）。
+由 launch.py 的 --tray 参数调用。
 """
 
 from __future__ import annotations
@@ -20,9 +21,24 @@ from pathlib import Path
 APP_NAME = "DSH Desktop"
 POLL_MS = 200
 
+# 暗色主题
+BG = "#0f1115"
+PANEL = "#161b22"
+CARD = "#1c2128"
+ELEVATED = "#262c36"
+INPUT_BG = "#14171c"
+BORDER = "#2d333b"
+FG = "#e6edf3"
+MUT = "#8b949e"
+ACCENT = "#4d6bfe"
+OK = "#2ea043"
+WARN = "#d29922"
+ERR = "#f85149"
+INFO = "#58a6ff"
+
 
 class HarnessManager:
-    """管理 dsh web 子进程的生命周期、状态与日志。"""
+    """管理 dsh web 子进程的生命周期、状态与日志（线程安全，操作不阻塞 UI）。"""
 
     def __init__(self, helpers, dsh, host, port, workspace, dsh_home, log_path, notify):
         self.h = helpers
@@ -36,6 +52,7 @@ class HarnessManager:
         self.url = f"http://{host}:{port}/"
         self.proc = None
         self.status = "stopped"
+        self.busy = False
         self.lines = []
         self.count = 0
         self._lock = threading.Lock()
@@ -58,8 +75,14 @@ class HarnessManager:
         self.notify("log")
 
     def _set_status(self, status):
-        self.status = status
+        with self._lock:
+            self.status = status
         self._log(f"状态: {status}")
+        self.notify("status")
+
+    def _set_busy(self, busy):
+        with self._lock:
+            self.busy = busy
         self.notify("status")
 
     def start(self, workspace=None):
@@ -67,29 +90,40 @@ class HarnessManager:
             if self.proc is not None and self.proc.poll() is None:
                 self._log("Harness 已在运行，无需重复启动")
                 return
-        if workspace:
-            self.workspace = os.path.abspath(workspace)
-        os.makedirs(self.dsh_home, exist_ok=True)
-        env = {**os.environ, "DSH_HOME": self.dsh_home, "NO_COLOR": "1"}
-        creationflags = 0
-        if os.name == "nt":
-            creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
-        self._log(f"启动 Harness: {self.dsh} web --host {self.host} --port {self.port}")
-        self._log(f"工作区: {self.workspace}")
-        self._set_status("starting")
-        proc = subprocess.Popen(
-            [self.dsh, "web", "--host", self.host, "--port", str(self.port)],
-            cwd=self.workspace,
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            creationflags=creationflags,
-        )
-        with self._lock:
-            self.proc = proc
-        threading.Thread(target=self._pump, args=(proc.stdout, "out"), daemon=True).start()
-        threading.Thread(target=self._pump, args=(proc.stderr, "err"), daemon=True).start()
-        threading.Thread(target=self._wait_ready, args=(proc,), daemon=True).start()
+            if self.busy:
+                self._log("正在执行其他操作，请稍候")
+                return
+            self.busy = True
+        try:
+            if workspace:
+                self.workspace = os.path.abspath(workspace)
+            if self.h["http_ready"](self.url):
+                self._log(f"检测到 {self.url} 已有 DSH 实例，直接接管")
+                self._set_status("ready")
+                return
+            os.makedirs(self.dsh_home, exist_ok=True)
+            env = {**os.environ, "DSH_HOME": self.dsh_home, "NO_COLOR": "1"}
+            creationflags = 0
+            if os.name == "nt":
+                creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+            self._log(f"启动 Harness: {self.dsh} web --host {self.host} --port {self.port}")
+            self._log(f"工作区: {self.workspace}")
+            self._set_status("starting")
+            proc = subprocess.Popen(
+                [self.dsh, "web", "--host", self.host, "--port", str(self.port)],
+                cwd=self.workspace,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                creationflags=creationflags,
+            )
+            with self._lock:
+                self.proc = proc
+            threading.Thread(target=self._pump, args=(proc.stdout, "out"), daemon=True).start()
+            threading.Thread(target=self._pump, args=(proc.stderr, "err"), daemon=True).start()
+            threading.Thread(target=self._wait_ready, args=(proc,), daemon=True).start()
+        finally:
+            self._set_busy(False)
 
     def _pump(self, stream, tag):
         try:
@@ -103,6 +137,9 @@ class HarnessManager:
         while time.monotonic() < deadline:
             with self._lock:
                 if self.proc is not proc or proc.poll() is not None:
+                    if proc.poll() is not None:
+                        self._log(f"Harness 进程已退出（code={proc.returncode}）")
+                        self._set_status("error")
                     return
             if self.h["http_ready"](self.url):
                 self._log(f"Harness 就绪: {self.url}")
@@ -115,12 +152,19 @@ class HarnessManager:
     def stop(self):
         with self._lock:
             proc, self.proc = self.proc, None
-        if proc is None:
-            self._log("Harness 未在运行")
-            return
-        self._log("正在停止 Harness…")
-        self.h["kill_tree"](proc)
-        self._set_status("stopped")
+            if proc is None or self.busy:
+                if proc is None:
+                    self._log("Harness 未在运行")
+                else:
+                    self._log("正在执行其他操作，请稍候")
+                return
+            self.busy = True
+        try:
+            self._log("正在停止 Harness…")
+            self.h["kill_tree"](proc)
+            self._set_status("stopped")
+        finally:
+            self._set_busy(False)
 
     def is_running(self):
         with self._lock:
@@ -131,73 +175,402 @@ class HarnessManager:
         self._log(f"打开浏览器: {self.url}")
 
 
-class ControlWindow:
-    """轻量控制台窗口：状态、工作区、启动/停止、日志。关闭即隐藏到托盘。"""
+def _setup_styles(root):
+    import tkinter as tk
+    from tkinter import ttk
 
-    def __init__(self, mgr, ui_q=None):
+    style = ttk.Style(root)
+    try:
+        style.theme_use("clam")
+    except Exception:
+        pass
+    style.configure(".", background=BG, foreground=FG, fieldbackground=PANEL, bordercolor=CARD)
+    style.configure("TFrame", background=BG)
+    style.configure("Card.TFrame", background=CARD)
+    style.configure("TLabel", background=BG, foreground=FG)
+    style.configure("Muted.TLabel", background=BG, foreground=MUT)
+    style.configure("Card.TLabel", background=CARD, foreground=FG)
+    style.configure("Info.TLabel", background=CARD, foreground=INFO)
+    style.configure(
+        "TButton",
+        background=PANEL,
+        foreground=FG,
+        bordercolor=CARD,
+        focuscolor=PANEL,
+        padding=(10, 4),
+    )
+    style.map("TButton", background=[("active", "#21262d"), ("disabled", "#161b22")])
+    style.configure(
+        "Accent.TButton",
+        background=ACCENT,
+        foreground="#ffffff",
+        bordercolor=ACCENT,
+        padding=(10, 4),
+    )
+    style.map("Accent.TButton", background=[("active", "#3d59e0"), ("disabled", "#2a3350")])
+    style.configure("TEntry", fieldbackground=PANEL, foreground=FG, insertcolor=FG)
+    style.configure(
+        "TNotebook",
+        background=BG,
+        borderwidth=0,
+        tabmargins=(8, 6, 8, 0),
+    )
+    style.configure(
+        "TNotebook.Tab",
+        background=PANEL,
+        foreground=MUT,
+        padding=(14, 6),
+        borderwidth=0,
+    )
+    style.map("TNotebook.Tab", background=[("selected", CARD)], foreground=[("selected", FG)])
+    style.configure(
+        "Treeview",
+        background=CARD,
+        fieldbackground=CARD,
+        foreground=FG,
+        bordercolor=CARD,
+        rowheight=28,
+    )
+    style.configure(
+        "Treeview.Heading",
+        background=PANEL,
+        foreground=MUT,
+        bordercolor=CARD,
+        padding=(6, 4),
+    )
+    style.map("Treeview", background=[("selected", ELEVATED)], foreground=[("selected", FG)])
+
+
+class SessionsPanel:
+    """会话管理页：按工作区分组浏览、搜索、查看内容、删除（移入备份）。"""
+
+    def __init__(self, parent, store, sessions_root, trash_root, notify_log):
         import tkinter as tk
-        from tkinter import scrolledtext
+        from tkinter import ttk
+
+        self.store = store
+        self.sessions_root = sessions_root
+        self.trash_root = trash_root
+        self.notify_log = notify_log
+        self.sessions = []
+        self._key2info = {}
+
+        frame = ttk.Frame(parent)
+        toolbar = ttk.Frame(frame, padding=(8, 6))
+        toolbar.pack(fill="x")
+        ttk.Button(toolbar, text="刷新", command=self.refresh).pack(side="left")
+        ttk.Button(toolbar, text="删除会话（进备份）", command=self._confirm_delete).pack(side="left", padx=(6, 0))
+        ttk.Button(toolbar, text="打开备份目录", command=self._open_trash).pack(side="left", padx=(6, 0))
+        ttk.Label(toolbar, text="搜索").pack(side="left", padx=(16, 4))
+        self.search_var = tk.StringVar()
+        search_entry = ttk.Entry(toolbar, textvariable=self.search_var, width=26)
+        search_entry.pack(side="left")
+        search_entry.bind("<Return>", lambda e: self.refresh())
+
+        paned = ttk.Panedwindow(frame, orient="horizontal")
+        paned.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+
+        self.tree = ttk.Treeview(paned, columns=("time", "size"), show="tree headings")
+        self.tree.heading("#0", text="会话")
+        self.tree.heading("time", text="时间")
+        self.tree.heading("size", text="大小")
+        self.tree.column("#0", width=320, anchor="w")
+        self.tree.column("time", width=130, anchor="w")
+        self.tree.column("size", width=80, anchor="e")
+        self.tree.bind("<<TreeviewSelect>>", self._on_select)
+        paned.add(self.tree, weight=2)
+
+        self.view = tk.Text(paned, bg=CARD, fg=FG, wrap="word", relief="flat", padx=10, pady=8)
+        self.view.tag_configure("user", foreground="#58a6ff", spacing1=8)
+        self.view.tag_configure("assistant", foreground=FG, spacing1=8)
+        self.view.tag_configure("tool", foreground=WARN, spacing1=4)
+        self.view.tag_configure("result", foreground=MUT, spacing1=4)
+        self.view.tag_configure("error", foreground=ERR)
+        self.view.tag_configure("h1", foreground=MUT, spacing1=2)
+        sb = ttk.Scrollbar(self.view, command=self.view.yview)
+        self.view.configure(yscrollcommand=sb.set)
+        paned.add(self.view, weight=3)
+
+        bottom = ttk.Frame(frame)
+        bottom.pack(fill="x", padx=8, pady=(0, 8))
+        self.stats_var = tk.StringVar(value="")
+        ttk.Label(bottom, textvariable=self.stats_var, style="Muted.TLabel").pack(side="left")
+        ttk.Label(bottom, text="双击/单击会话查看内容", style="Muted.TLabel").pack(side="right")
+
+        self.menu = tk.Menu(frame, tearoff=0, bg=PANEL, fg=FG, activebackground=ELEVATED, activeforeground=FG)
+        self.menu.add_command(label="删除会话（进备份）", command=self._confirm_delete)
+        self.menu.add_command(label="复制会话 ID", command=self._copy_id)
+        self.tree.bind("<Button-3>", self._on_right_click)
+
+        search_entry.bind("<KeyRelease>", lambda e: self.refresh())
+        self.refresh()
+        frame.pack(fill="both", expand=True)
+
+    def refresh(self):
+        import session_store
+
+        self.sessions = session_store.scan(self.sessions_root)
+        keyword = self.search_var.get().strip().lower()
+        self.tree.delete(*self.tree.get_children())
+        self._key2info = {}
+        by_ws = {}
+        for info in self.sessions:
+            if keyword and keyword not in (info.title + " " + info.workspace + " " + (info.cwd or "")).lower():
+                continue
+            by_ws.setdefault(info.workspace, []).append(info)
+        for ws in sorted(by_ws):
+            parent = self.tree.insert("", "end", iid="ws:" + ws, text=ws, open=True)
+            for info in sorted(by_ws[ws], key=lambda i: i.mtime, reverse=True):
+                iid = f"{ws}|{info.session_id}"
+                self._key2info[iid] = info
+                label = info.title
+                if len(label) > 46:
+                    label = label[:46] + "…"
+                self.tree.insert(
+                    parent,
+                    "end",
+                    iid=iid,
+                    text=label,
+                    values=(session_store.format_time(info.mtime), session_store.format_size(info.size)),
+                )
+        ws_count = len(by_ws)
+        sess_count = sum(len(v) for v in by_ws.values())
+        self.stats_var.set(f"共 {ws_count} 个工作区，{sess_count} 个会话")
+
+    def _on_right_click(self, event):
+        item = self.tree.identify_row(event.y)
+        if item:
+            self.tree.selection_set(item)
+            self.menu.tk_popup(event.x_root, event.y_root)
+
+    def _copy_id(self):
+        import tkinter as tk
+
+        sel = self.tree.selection()
+        if not sel:
+            return
+        info = self._key2info.get(sel[0])
+        if info is None:
+            return
+        self.view.clipboard_clear()
+        self.view.clipboard_append(info.session_id)
+        self.notify_log(f"已复制会话 ID: {info.session_id}")
+
+    def _on_select(self, _event):
+        sel = self.tree.selection()
+        if not sel:
+            return
+        info = self._key2info.get(sel[0])
+        if info is None:
+            return
+        self.view.config(state="normal")
+        self.view.delete("1.0", "end")
+        self.view.insert("end", f"正在加载：{info.session_id} …\n", "h1")
+        self.view.config(state="disabled")
+        threading.Thread(target=self._load, args=(info,), daemon=True).start()
+
+    def _load(self, info):
+        import session_store
+
+        try:
+            rendered = session_store.render(info.dir_path / "session.jsonl.zstd")
+        except Exception as exc:
+            rendered = [("error", f"读取失败：{exc}")]
+        self.notify_log(("session_view", rendered))
+
+    def apply_view(self, rendered):
+        self.view.config(state="normal")
+        self.view.delete("1.0", "end")
+        for kind, text in rendered:
+            prefix = {
+                "user": "👤 用户\n",
+                "assistant": "🤖 助手\n",
+                "tool": "🔧 工具调用\n",
+                "result": "📦 工具结果\n",
+                "info": "",
+                "error": "",
+            }.get(kind, "")
+            self.view.insert("end", prefix + text + "\n\n", kind)
+        self.view.config(state="disabled")
+
+    def _confirm_delete(self):
+        import tkinter as tk
+        from tkinter import messagebox
+        import session_store
+
+        sel = self.tree.selection()
+        if not sel:
+            return
+        info = self._key2info.get(sel[0])
+        if info is None:
+            return
+        ok = messagebox.askyesno(
+            "删除会话",
+            f"确定删除会话吗？\n\n{info.title}\n（{info.workspace}）\n\n不会彻底删除，会移入备份目录，可恢复。",
+        )
+        if not ok:
+            return
+        try:
+            dest = session_store.delete(info.dir_path, self.trash_root)
+            self.notify_log(f"会话已移入备份: {dest}")
+        except Exception as exc:
+            self.notify_log(f"删除失败: {exc}")
+        self.refresh()
+
+    def _open_trash(self):
+        try:
+            self.trash_root.mkdir(parents=True, exist_ok=True)
+            os.startfile(str(self.trash_root))
+        except OSError:
+            pass
+
+
+class ControlWindow:
+    """主窗口：状态、启停（后台执行）、日志 + 会话管理页。关闭即隐藏到托盘。"""
+
+    def __init__(self, mgr, ui_q=None, sessions_root=None, trash_root=None):
+        import tkinter as tk
+        from tkinter import ttk
 
         self.mgr = mgr
         self.q = ui_q if ui_q is not None else queue.Queue()
         self.tray = None
         self.auto_open = False
         self._shown = 0
+        self.sessions_root = sessions_root
+        self.trash_root = trash_root
 
         self.root = tk.Tk()
         self.root.title(APP_NAME)
-        self.root.geometry("580x440")
-        self.root.minsize(500, 320)
+        self.root.geometry("900x640")
+        self.root.minsize(720, 480)
+        self.root.configure(bg=BG)
         ico = Path(__file__).resolve().parent / "build" / "icon.ico"
         try:
             self.root.iconbitmap(default=str(ico))
         except Exception:
             pass
+        _setup_styles(self.root)
 
+        header = ttk.Frame(self.root, padding=(14, 10))
+        header.pack(fill="x")
+        ttk.Label(header, text="DSH Desktop", font=("Microsoft YaHei UI", 15, "bold")).pack(side="left")
         self.status_var = tk.StringVar(value="已停止")
-        self.url_var = tk.StringVar(value=mgr.url)
-        self.workspace_var = tk.StringVar(value=mgr.workspace)
+        self.status_label = ttk.Label(header, textvariable=self.status_var, font=("Microsoft YaHei UI", 10, "bold"))
+        self.status_label.pack(side="right")
 
-        frame = tk.Frame(self.root, padx=12, pady=10)
-        frame.pack(fill=tk.X)
+        strip = ttk.Frame(self.root, style="Card.TFrame", padding=(14, 6))
+        strip.pack(fill="x")
+        ttk.Label(strip, text="📁 工作区", style="Card.TLabel").pack(side="left")
+        self.ws_label = ttk.Label(strip, text=mgr.workspace, style="Card.TLabel")
+        self.ws_label.pack(side="left", padx=(6, 0))
+        ttk.Label(strip, text="🌐", style="Card.TLabel").pack(side="right", padx=(0, 4))
+        self.url_label = ttk.Label(strip, text=mgr.url, style="Info.TLabel", cursor="hand2")
+        self.url_label.pack(side="right")
+        self.url_label.bind("<Button-1>", lambda e: self._do("open"))
 
-        tk.Label(frame, text="状态").grid(row=0, column=0, sticky="w")
-        self.status_label = tk.Label(frame, textvariable=self.status_var, font=("Microsoft YaHei UI", 11, "bold"))
-        self.status_label.grid(row=0, column=1, sticky="w", padx=(8, 0))
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(fill="both", expand=True, padx=10, pady=(0, 8))
 
-        tk.Label(frame, text="地址").grid(row=1, column=0, sticky="w", pady=(6, 0))
-        tk.Entry(frame, textvariable=self.url_var, state="readonly", width=42).grid(
-            row=1, column=1, sticky="we", padx=(8, 0), pady=(6, 0)
-        )
+        console_tab = ttk.Frame(self.notebook)
+        self.notebook.add(console_tab, text=" 控制台 ")
+        self._build_console_tab(console_tab)
 
-        tk.Label(frame, text="工作区").grid(row=2, column=0, sticky="w", pady=(6, 0))
-        tk.Entry(frame, textvariable=self.workspace_var, width=42).grid(
-            row=2, column=1, sticky="we", padx=(8, 0), pady=(6, 0)
-        )
+        sessions_tab = ttk.Frame(self.notebook)
+        self.notebook.add(sessions_tab, text=" 会话管理 ")
+        if sessions_root is not None:
+            self.sessions_panel = SessionsPanel(
+                sessions_tab,
+                store=None,
+                sessions_root=sessions_root,
+                trash_root=trash_root,
+                notify_log=self._notify,
+            )
+        else:
+            ttk.Label(sessions_tab, text="未指定会话目录").pack(pady=20)
+            self.sessions_panel = None
 
-        btns = tk.Frame(self.root, padx=12)
-        btns.pack(fill=tk.X, pady=(8, 4))
-        self.start_btn = tk.Button(btns, text="启动 Harness", command=lambda: self.q.put(("action", "start")))
-        self.start_btn.pack(side=tk.LEFT, padx=(0, 6))
-        self.stop_btn = tk.Button(btns, text="停止 Harness", command=lambda: self.q.put(("action", "stop")))
-        self.stop_btn.pack(side=tk.LEFT, padx=(0, 6))
-        tk.Button(btns, text="打开浏览器", command=lambda: self.q.put(("action", "open"))).pack(side=tk.LEFT, padx=(0, 6))
-        tk.Button(btns, text="打开日志目录", command=lambda: self.q.put(("action", "logs"))).pack(side=tk.LEFT, padx=(0, 6))
-        tk.Button(btns, text="隐藏到托盘", command=lambda: self.q.put(("action", "hide"))).pack(side=tk.RIGHT)
-
-        log_frame = tk.Frame(self.root, padx=12, pady=10)
-        log_frame.pack(fill=tk.BOTH, expand=True)
-        self.log_text = scrolledtext.ScrolledText(log_frame, state="disabled", height=14, wrap="word")
-        self.log_text.pack(fill=tk.BOTH, expand=True)
+        footer = ttk.Frame(self.root, padding=(14, 6))
+        footer.pack(fill="x")
+        self.foot_var = tk.StringVar(value="")
+        ttk.Label(footer, textvariable=self.foot_var, style="Muted.TLabel").pack(side="left")
+        self.stats_var = tk.StringVar(value="")
+        ttk.Label(footer, textvariable=self.stats_var, style="Muted.TLabel").pack(side="right")
 
         self.root.protocol("WM_DELETE_WINDOW", self.hide)
         self.root.after(POLL_MS, self._poll)
+        self._set_status_style()
+
+    def _build_console_tab(self, parent):
+        import tkinter as tk
+        from tkinter import scrolledtext, ttk
+
+        card = ttk.Frame(parent, style="Card.TFrame", padding=12)
+        card.pack(fill="both", expand=True, padx=8, pady=8)
+
+        ttk.Label(card, text="工作区目录", style="Card.TLabel").grid(row=0, column=0, sticky="w")
+        self.workspace_var = tk.StringVar(value=self.mgr.workspace)
+        ttk.Entry(card, textvariable=self.workspace_var).grid(row=0, column=1, sticky="we", padx=(8, 0))
+        ttk.Button(card, text="浏览…", command=self._browse_workspace).grid(row=0, column=2, padx=(6, 0))
+
+        ttk.Label(card, text="地址", style="Card.TLabel").grid(row=1, column=0, sticky="w", pady=(8, 0))
+        self.url_var = tk.StringVar(value=self.mgr.url)
+        ttk.Entry(card, textvariable=self.url_var, state="readonly").grid(row=1, column=1, sticky="we", padx=(8, 0), pady=(8, 0))
+        ttk.Button(card, text="打开", command=lambda: self._do("open")).grid(row=1, column=2, padx=(6, 0), pady=(8, 0))
+
+        btns = ttk.Frame(card, style="Card.TFrame")
+        btns.grid(row=2, column=0, columnspan=2, sticky="w", pady=(12, 4))
+        self.start_btn = ttk.Button(btns, text="启动 Harness", style="Accent.TButton", command=lambda: self._do("start"))
+        self.start_btn.pack(side="left")
+        self.stop_btn = ttk.Button(btns, text="停止 Harness", command=lambda: self._do("stop"))
+        self.stop_btn.pack(side="left", padx=(6, 0))
+        ttk.Button(btns, text="打开浏览器", command=lambda: self._do("open")).pack(side="left", padx=(6, 0))
+        ttk.Button(btns, text="打开日志目录", command=lambda: self._do("logs")).pack(side="left", padx=(6, 0))
+        ttk.Button(btns, text="隐藏到托盘", command=lambda: self._do("hide")).pack(side="right")
+
+        log_card = ttk.Frame(parent, style="Card.TFrame", padding=8)
+        log_card.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+        self.log_text = scrolledtext.ScrolledText(log_card, bg=INPUT_BG, fg=MUT, relief="flat", wrap="word", height=14)
+        self.log_text.tag_configure("ok", foreground=OK)
+        self.log_text.tag_configure("warn", foreground=WARN)
+        self.log_text.tag_configure("err", foreground=ERR)
+        self.log_text.tag_configure("info", foreground=MUT)
+        self.log_text.pack(fill="both", expand=True)
+        log_bar = ttk.Frame(log_card, style="Card.TFrame")
+        log_bar.pack(fill="x", pady=(6, 0))
+        ttk.Button(log_bar, text="清空日志", command=self._clear_log).pack(side="left")
+        self.log_count_var = tk.StringVar(value="")
+        ttk.Label(log_bar, textvariable=self.log_count_var, style="Muted.TLabel").pack(side="right")
+        card.columnconfigure(1, weight=1)
+
+    def _browse_workspace(self):
+        import tkinter.filedialog as fd
+
+        current = self.workspace_var.get() or os.getcwd()
+        chosen = fd.askdirectory(initialdir=current, title="选择工作区目录")
+        if chosen:
+            self.workspace_var.set(chosen)
+
+    def _clear_log(self):
+        with self.mgr._lock:
+            self.mgr.lines.clear()
+        self._shown = 0
+        self.log_text.config(state="normal")
+        self.log_text.delete("1.0", "end")
+        self.log_text.config(state="disabled")
+        self.log_count_var.set("")
+
+    def _notify(self, payload):
+        if isinstance(payload, tuple) and payload and payload[0] == "session_view":
+            self.q.put(("event", payload))
+        else:
+            self.mgr._log(str(payload))
+
+    def _do(self, name):
+        self.q.put(("action", name))
 
     def enqueue(self, kind):
         self.q.put(("event", kind))
-
-    def action(self, name):
-        self.q.put(("action", name))
 
     def show(self):
         self.root.deiconify()
@@ -209,24 +582,41 @@ class ControlWindow:
 
     def _set_status_style(self):
         color = {
-            "ready": "#1a7f37",
-            "starting": "#9a6700",
-            "error": "#cf222e",
-            "stopped": "#57606a",
-        }.get(self.mgr.status, "#57606a")
+            "ready": OK,
+            "starting": WARN,
+            "error": ERR,
+            "stopped": MUT,
+        }.get(self.mgr.status, MUT)
         text = {
-            "ready": "运行中（就绪）",
-            "starting": "正在启动…",
-            "error": "异常 / 超时",
-            "stopped": "已停止",
+            "ready": "● 运行中（就绪）",
+            "starting": "● 正在启动…",
+            "error": "● 异常 / 超时",
+            "stopped": "● 已停止",
         }.get(self.mgr.status, self.mgr.status)
         self.status_var.set(text)
-        self.status_label.config(fg=color)
+        self.status_label.configure(foreground=color)
         running = self.mgr.is_running() or self.mgr.status in ("starting", "ready")
-        self.start_btn.config(state="disabled" if running else "normal")
-        self.stop_btn.config(state="normal" if running else "disabled")
+        busy = self.mgr.busy
+        self.start_btn.config(state="disabled" if running or busy else "normal")
+        self.stop_btn.config(state="normal" if running and not busy else "disabled")
+        self.ws_label.config(text=self.mgr.workspace)
+        if self.sessions_panel is not None:
+            self.stats_var.set(f"会话 {len(self.sessions_panel.sessions)} 个")
+        self.foot_var.set(
+            f"数据目录 {self.mgr.dsh_home} · dsh {self.mgr.dsh} · 端口 {self.mgr.port}"
+        )
 
     def _refresh_log(self):
+        def tag_for(line):
+            low = line.lower()
+            if any(s in low for s in ("error", "fatal", "失败", "超时", "异常")) or low.startswith("[err]"):
+                return "err"
+            if "就绪" in low or "ready" in low or "状态: ready" in low:
+                return "ok"
+            if any(s in low for s in ("启动", "starting", "开始")) or low.startswith("[out]"):
+                return "warn"
+            return "info"
+
         lines = self.mgr.lines
         if self._shown > len(lines):
             self._shown = 0
@@ -235,9 +625,11 @@ class ControlWindow:
             return
         self._shown = len(lines)
         self.log_text.config(state="normal")
-        self.log_text.insert("end", "\n".join(new_lines) + "\n")
+        for line in new_lines:
+            self.log_text.insert("end", line + "\n", tag_for(line))
         self.log_text.see("end")
         self.log_text.config(state="disabled")
+        self.log_count_var.set(f"共 {len(lines)} 行")
 
     def _poll(self):
         try:
@@ -252,17 +644,20 @@ class ControlWindow:
                         if self.mgr.status == "ready" and self.auto_open:
                             self.auto_open = False
                             self.mgr.open_browser()
+                    elif isinstance(payload, tuple) and payload[0] == "session_view":
+                        if self.sessions_panel is not None:
+                            self.sessions_panel.apply_view(payload[1])
                 elif kind == "action":
                     if payload == "start":
-                        self.mgr.start(self.workspace_var.get())
+                        workspace = self.workspace_var.get() if hasattr(self, "workspace_var") else None
+                        threading.Thread(target=self.mgr.start, args=(workspace,), daemon=True).start()
                     elif payload == "stop":
-                        self.mgr.stop()
+                        threading.Thread(target=self.mgr.stop, daemon=True).start()
                     elif payload == "open":
                         self.mgr.open_browser()
                     elif payload == "logs":
-                        log_dir = self.mgr.log_path.parent
                         try:
-                            os.startfile(str(log_dir))
+                            os.startfile(str(self.mgr.log_path.parent))
                         except OSError:
                             pass
                     elif payload == "hide":
@@ -270,7 +665,7 @@ class ControlWindow:
                     elif payload == "show":
                         self.show()
                     elif payload == "exit":
-                        self.mgr.stop()
+                        threading.Thread(target=self.mgr.stop, daemon=True).start()
                         if self.tray is not None:
                             self.tray.stop()
                         self.root.quit()
@@ -325,14 +720,16 @@ class TrayIcon:
 
 
 def run_tray(args, helpers):
-    """--tray 入口：托盘 + 控制台窗口，自动启动 Harness。"""
-    script_dir = Path(__file__).resolve().parent
+    """--tray 入口：托盘 + 控制台窗口 + 会话管理，自动启动 Harness。"""
+    import session_store
+
     dsh_home = helpers["default_dsh_home"]()
+    sessions_root = Path(dsh_home) / "sessions"
+    trash_root = Path(dsh_home) / "sessions_trash"
     log_dir = Path(os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")) / "dsh-desktop" / "logs"
     log_path = log_dir / "launcher.log"
 
     dsh = helpers["find_dsh"]()
-
     ui_q = queue.Queue()
     mgr = HarnessManager(
         helpers,
@@ -344,22 +741,23 @@ def run_tray(args, helpers):
         log_path,
         notify=lambda kind: ui_q.put(("event", kind)),
     )
-    window = ControlWindow(mgr, ui_q)
+    window = ControlWindow(mgr, ui_q, sessions_root=sessions_root, trash_root=trash_root)
 
     tray = TrayIcon(mgr, window)
     window.tray = tray
 
     mgr._log(f"DSH Desktop 托盘已启动（数据目录 {dsh_home}）")
     mgr._log(f"使用 {dsh}")
+    mgr._log(f"会话目录 {sessions_root}（备份目录 {trash_root}）")
     window.auto_open = not args.no_browser
 
     tray.run_detached()
-    window.root.after(300, lambda: mgr.start(args.workspace))
+    window.root.after(300, lambda: threading.Thread(target=mgr.start, args=(args.workspace,), daemon=True).start())
     window.show()
 
     try:
         window.root.mainloop()
     finally:
-        mgr.stop()
+        threading.Thread(target=mgr.stop, daemon=True).start()
         tray.stop()
     return 0

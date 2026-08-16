@@ -64,6 +64,10 @@ For a system tray icon and a small control window (start/stop, status and logs):
 1. Install the tray dependencies once: `pip install -r requirements-launcher.txt`
 2. Double-click **`启动 DSH 托盘.bat`**; the tray icon lets you start/stop, open the UI or quit anytime.
 
+The tray window also includes a **Session Manager** tab: browse DSH sessions grouped by workspace, search/filter,
+view conversation content, and delete sessions (moved to the `sessions_trash` backup directory, recoverable).
+Start/stop run silently in the background so the UI never freezes.
+
 > Note: sessions/settings live in `%APPDATA%\dsh-desktop\harness` and survive uninstalls or reinstallation.
 
 ## Community
