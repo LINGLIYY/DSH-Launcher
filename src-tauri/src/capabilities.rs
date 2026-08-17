@@ -376,6 +376,10 @@ pub fn list_plugins() -> Vec<PluginInfo> {
                 continue;
             }
             let dir_name = entry.file_name().to_string_lossy().into_owned();
+            // WSL 开发中临时禁用的目录（disabled-*）不在 Windows 端展示
+            if dir_name.starts_with("disabled-") {
+                continue;
+            }
             let is_dep = deps.iter().any(|(n, s)| {
                 s.starts_with("file:") && (n == &dir_name || s.ends_with(&format!("/{dir_name}")))
             });
