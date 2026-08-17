@@ -1491,7 +1491,7 @@ function renderPlugins(){
   list.forEach(p=>{
     const card=document.createElement("div");card.className="cap-card";
     const tagCls=kindCls[p.kind]||"tag-third";
-    const canToggle=p.kind==="builtin"||p.source==="local";
+    const canToggle=p.kind==="builtin"||p.kind==="extension"||p.source==="local";
     const canUninstall=(p.kind==="extension"&&p.source!=="preset")||p.source==="local";
     const canCheck=p.kind==="extension"&&p.source==="npm";
     card.innerHTML=`
@@ -1526,7 +1526,7 @@ function renderPlugins(){
       e.stopPropagation();const id=btn.dataset.id,act=btn.dataset.act,p=pluginData.find(x=>x.id===id);
       if(act==="toggle"){
         const next=!p.enabled;
-        const tip=p.kind==="builtin"?"（本家组件，禁用后可能影响 DSH 功能；写入后会自动做配置校验）":"";
+        const tip=p.kind==="builtin"?"（本家组件，禁用后可能影响 DSH 功能；写入后会自动做配置校验）":(p.kind==="extension"?"（扩展插件；写入后会自动做配置校验）":"");
         showConfirm("启用/禁用插件",`确定要${next?"启用":"禁用"}「${p.name}」吗？${tip}`,async()=>{
           try{await invoke("set_plugin_enabled",{id,enabled:next});appendLog(`[插件] ${id} ${next?"已启用":"已禁用"}，重启 DSH 后生效`,"log-ready");await fetchPlugins();renderPlugins()}
           catch(err){appendLog(`[插件] 操作失败：${err}`,"log-error")}
@@ -1590,7 +1590,7 @@ document.querySelectorAll("#pluginBatchBar button[data-batch]").forEach(btn=>{
     for(const id of ids){
       const p=pluginData.find(x=>x.id===id);if(!p)continue;
       if(act==="enable"||act==="disable"){
-        if(p.kind!=="builtin"&&p.source!=="local"){skip++;continue}
+        if(!(p.kind==="builtin"||p.kind==="extension"||p.source==="local")){skip++;continue}
         try{await invoke("set_plugin_enabled",{id,enabled:act==="enable"});ok++}
         catch(err){appendLog(`[批量] ${p.name} 失败：${err}`,"log-error")}
       }else if(act==="uninstall"){

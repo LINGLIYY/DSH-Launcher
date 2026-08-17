@@ -775,8 +775,10 @@ pub fn set_plugin_enabled(id: &str, enabled: bool) -> Result<(), String> {
     if !valid_plugin_id(id) {
         return Err("非法插件 ID".to_string());
     }
-    if id.starts_with("@deepseek-ai/") {
-        // 本家（内置）：通过 disable 条目控制，写入后交给 dsh 校验，失败自动回滚
+    // 本地自研插件（insert 注册）：通过 insert 条目控制
+    let dir = profile_dir().join("plugins").join(id);
+    if !dir.is_dir() {
+        // 其余（内置本家 / 扩展 / 第三方 bundle）：通过 disable 条目控制，写入后交给 dsh 校验，失败自动回滚
         let patch = patch_path();
         let before = std::fs::read_to_string(&patch).unwrap_or_default();
         let apply = || -> Result<(), String> {
@@ -797,11 +799,6 @@ pub fn set_plugin_enabled(id: &str, enabled: bool) -> Result<(), String> {
             return Err(e);
         }
         return Ok(());
-    }
-    // 本地自研插件：insert 条目
-    let dir = profile_dir().join("plugins").join(id);
-    if !dir.is_dir() {
-        return Err("仅支持启用/禁用「自研本地」插件；扩展请使用卸载/更新".to_string());
     }
     let entry = plugin_entry(&dir);
     if enabled {
