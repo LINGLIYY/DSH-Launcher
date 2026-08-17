@@ -2,6 +2,8 @@
 
 面向 [DeepSeek Harness（DSH）](https://github.com/deepseek-ai/deepseek-harness) 的 Windows 轻量桌面启动器。
 
+> 当前版本：**v1.0（2026-08-17）**
+
 它**不重新实现 DSH**，也不打包 Node/Electron，而是把官方命令全局安装好的 `dsh` 包装成更好用的入口：异步启动/停止、系统托盘、日志、会话管理、插件市场与技能列表等。详细功能说明见 [项目介绍.md](项目介绍.md)。
 
 ## 技术栈

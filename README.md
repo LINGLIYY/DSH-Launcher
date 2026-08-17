@@ -2,6 +2,8 @@
 
 A lightweight Windows desktop launcher for [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness).
 
+> Current version: **v1.0 (2026-08-17)**
+
 It does **not** reimplement DSH and does **not** bundle Node/Electron. It wraps the globally installed `dsh` CLI into a friendlier entry point: async start/stop, system tray, logs, session management, plugin marketplace, and skill listing. See [项目介绍.md](项目介绍.md) for full details (Chinese).
 
 ## Stack
