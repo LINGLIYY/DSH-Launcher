@@ -536,6 +536,35 @@ async fn dsh_version() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
+async fn install_or_update_dsh() -> Result<String, String> {
+    let out = tauri::async_runtime::spawn_blocking(|| {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("cmd")
+            .args(["/C", "npm", "install", "-g", "@deepseek-ai/dsh@latest"])
+            .creation_flags(0x0800_0000)
+            .output()
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    if out.status.success() {
+        let mut msg = stdout.trim().to_string();
+        if msg.is_empty() {
+            msg = stderr.trim().to_string();
+        }
+        Ok(if msg.is_empty() { "DSH 安装/更新完成".to_string() } else { msg })
+    } else {
+        let mut msg = stderr.trim().to_string();
+        if msg.is_empty() {
+            msg = stdout.trim().to_string();
+        }
+        Err(if msg.is_empty() { "npm 安装失败".to_string() } else { msg })
+    }
+}
+
+#[tauri::command]
 fn set_always_on_top(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, PrefsState>,
@@ -780,6 +809,7 @@ pub fn run() {
             copy_text,
             read_launcher_log,
             dsh_version,
+            install_or_update_dsh,
             set_always_on_top,
             list_plugins,
             list_skills,

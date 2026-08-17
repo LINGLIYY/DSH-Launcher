@@ -683,6 +683,8 @@ body{background:var(--bg-window);overflow:hidden;position:relative;height:calc(1
           <label>DSH 版本</label>
           <input type="text" id="dshVersionText" value="检测中..." readonly>
           <button class="btn-small" id="btnCopyVersion">复制</button>
+          <button class="btn-small" id="btnCheckDshUpdate">检查更新</button>
+          <button class="btn-small" id="btnInstallDsh">安装 / 更新 DSH</button>
         </div>
         <div class="btn-group">
           <button class="btn-primary" id="btnStart">启动 DSH</button>
@@ -1307,6 +1309,35 @@ async function loadDshVersion(){
     if(v.path)$("dshVersionText").title=v.path;
   }catch(e){$("dshVersionText").value="检测失败"}
 }
+async function checkDshUpdate(){
+  const btn=$("btnCheckDshUpdate");if(btn){btn.disabled=true;btn.textContent="检查中..."}
+  try{
+    const r=await fetch("https://registry.npmjs.org/@deepseek-ai/dsh/latest");
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    const d=await r.json();const latest=d.version;
+    const inst=$("dshVersionText").value||"";
+    if(!latest){appendLog("[DSH] 无法获取最新版本","log-error");if(btn){btn.disabled=false;btn.textContent="检查更新"}return}
+    if(inst&&inst===latest){appendLog(`[DSH] 已是最新版本 ${latest}`,"log-ready");if(btn){btn.disabled=false;btn.textContent="已最新"}}
+    else{
+      appendLog(`[DSH] 检测到新版本：${inst||"未安装"} → ${latest}，点击「安装 / 更新 DSH」`,"log-stop");
+      if(btn){btn.disabled=false;btn.textContent="检查更新"}
+    }
+  }catch(e){appendLog("[DSH] 检查更新失败："+e,"log-error");if(btn){btn.disabled=false;btn.textContent="检查更新"}}
+}
+$("btnCheckDshUpdate")?.addEventListener("click",checkDshUpdate);
+$("btnInstallDsh")?.addEventListener("click",()=>{
+  showConfirm("安装 / 更新 DSH","将通过 npm 全局安装最新版 @deepseek-ai/dsh，需要联网，可能需要几分钟。当前会话数据不受影响。",async()=>{
+    const btn=$("btnInstallDsh");if(btn){btn.disabled=true;btn.textContent="安装中..."}
+    appendLog("[DSH] 正在安装 / 更新 DSH 本体...","log-start");
+    try{
+      const r=await invoke("install_or_update_dsh");
+      appendLog(`[DSH] ${r}`,"log-ready");
+      await loadDshVersion();
+      appendLog("[DSH] 更新完成，请重启 DSH 使新版本生效","log-stop");
+    }catch(e){appendLog("[DSH] 安装/更新失败："+e,"log-error")}
+    if(btn){btn.disabled=false;btn.textContent="安装 / 更新 DSH"}
+  });
+});
 $("btnClearCache")?.addEventListener("click",()=>showConfirm("清空启动器缓存","确定清空启动器缓存吗？会重置偏好并清理日志，之后界面刷新。",async()=>{
   try{await invoke("clear_launcher_cache");appendLog("[缓存] 已清空，界面即将刷新","log-stop");setTimeout(()=>location.reload(),500)}
   catch(e){appendLog("清空失败："+e,"log-error")}
