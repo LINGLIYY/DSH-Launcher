@@ -6,6 +6,8 @@ A lightweight Windows desktop launcher for [DeepSeek Harness (DSH)](https://gith
 
 It does **not** reimplement DSH and does **not** bundle Node/Electron. It wraps the globally installed `dsh` CLI into a friendlier entry point: async start/stop, system tray, logs, session management, plugin marketplace, and skill listing. See [项目介绍.md](项目介绍.md) for full details (Chinese).
 
+> Plugin activation: DSH only loads packages that declare `dsh.bundle` in their manifest and are listed in the profile's `dsh.profile.bundles`. The launcher syncs that list automatically on install/register (and on opening the capability center), so a plugin that only sits in `node_modules` as a plain dependency is shown as such and never claimed to be active.
+
 ## Stack
 
 - Shell: Tauri 2 (Rust + system WebView2)

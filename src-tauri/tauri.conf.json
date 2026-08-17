@@ -23,7 +23,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://github.com https://avatars.githubusercontent.com; connect-src 'self' https://registry.npmjs.org https://awesome-dsh-plugin.com; font-src 'self'"
     }
   },
   "bundle": {

@@ -274,6 +274,9 @@ fn read_pkg_meta(path: &Path) -> (String, String, String, String) {
 }
 
 pub fn list_plugins() -> Vec<PluginInfo> {
+    // 兜底修复：把已安装且声明 dsh.bundle 的依赖同步进 bundle 层。
+    // 覆盖历史遗留的“已安装但未生效”（旧版 launcher / 手动 pnpm 安装）场景。
+    let _ = reconcile_bundles();
     let mut out = Vec::new();
 
     // 1. profile 内置组合包（bundles）
@@ -322,6 +325,11 @@ pub fn list_plugins() -> Vec<PluginInfo> {
         }
         let dir = node_modules_dir(name);
         let (pkg_name, version, author, desc) = read_pkg_meta(&dir.join("package.json"));
+        let desc = if declares_bundle(name) {
+            desc
+        } else {
+            format!("{desc}（未声明 dsh.bundle，仅为普通依赖，不会被 DSH 加载）")
+        };
         out.push(PluginInfo {
             id: name.clone(),
             name: if pkg_name.is_empty() { name.clone() } else { pkg_name },
@@ -353,11 +361,12 @@ pub fn list_plugins() -> Vec<PluginInfo> {
             let (name, version, author, desc) = read_pkg_meta(&dir.join("package.json"));
             out.push(PluginInfo {
                 id: dir_name.clone(),
-                name: if name.is_empty() { dir_name } else { name },
+                name: if name.is_empty() { dir_name.clone() } else { name },
                 version,
                 author,
                 desc,
-                enabled: true,
+                // 注册态 = 已进入 bundles 或 cordis.patch.yml 的 insert 块
+                enabled: is_registered(&dir_name),
                 builtin: false,
                 skills: vec![],
                 source: "local".to_string(),
@@ -390,6 +399,8 @@ pub fn list_plugins() -> Vec<PluginInfo> {
                 version,
                 author,
                 desc,
+                // harness 级插件没有 patch/bundle 注册态；enabled 仅表示它是否以
+                // file: 依赖出现在 profile package.json 的 dependencies 中
                 enabled: is_dep,
                 builtin: false,
                 skills: vec![],
@@ -597,11 +608,15 @@ fn safe_target(t: &str) -> bool {
     body.split('/').all(|s| !s.is_empty() && s != "." && s != "..")
 }
 
-fn run_dsh_plugin(args: &[&str]) -> Result<String, String> {
+/// 实时执行 `dsh plugin --profile web <args>`：stdout/stderr 逐行写入启动器
+/// 日志（前端日志区实时滚动显示安装进度），返回尾部摘要作为命令结果。
+fn run_dsh_plugin_live(app: &tauri::AppHandle, args: &[&str]) -> Result<String, String> {
+    use std::os::windows::process::CommandExt;
+    use std::sync::{Arc, Mutex};
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
     let dsh = crate::harness::find_dsh().map_err(|e| e.to_string())?;
     let home = dsh_home();
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut cmd = std::process::Command::new("cmd");
     cmd.args(["/C", &dsh]);
     cmd.arg("plugin").arg("--profile").arg("web");
@@ -611,54 +626,182 @@ fn run_dsh_plugin(args: &[&str]) -> Result<String, String> {
     cmd.env("DSH_HOME", &home);
     cmd.env("NO_COLOR", "1");
     cmd.creation_flags(CREATE_NO_WINDOW);
-    let out = cmd.output().map_err(|e| e.to_string())?;
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    if out.status.success() {
-        let mut msg = stdout.trim().to_string();
-        if msg.is_empty() {
-            msg = stderr.trim().to_string();
-        }
-        Ok(if msg.is_empty() { "ok".to_string() } else { msg })
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+
+    let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+    let captured = Arc::new(Mutex::new(Vec::<String>::new()));
+
+    if let Some(out) = child.stdout.take() {
+        spawn_live_reader(app.clone(), out, "info", captured.clone());
+    }
+    if let Some(err) = child.stderr.take() {
+        spawn_live_reader(app.clone(), err, "err", captured.clone());
+    }
+    let status = child.wait().map_err(|e| e.to_string())?;
+
+    let all = captured.lock().map(|v| v.join("\n")).unwrap_or_default();
+    let tail = {
+        let lines: Vec<&str> = all.lines().collect();
+        let n = lines.len();
+        let start = n.saturating_sub(5);
+        lines[start..].join("\n")
+    };
+    if status.success() {
+        Ok(if tail.is_empty() { "ok".to_string() } else { tail })
     } else {
-        let mut msg = stderr.trim().to_string();
-        if msg.is_empty() {
-            msg = stdout.trim().to_string();
+        // pnpm 构建白名单拦截：给出标记 + key，前端据此二次询问用户
+        match extract_blocked_build_key(&all) {
+            Some(key) => Err(format!("__BUILD_BLOCKED__:{key}\n{tail}")),
+            None => Err(if tail.is_empty() {
+                "命令执行失败".to_string()
+            } else {
+                tail
+            }),
         }
-        Err(if msg.is_empty() { "命令执行失败".to_string() } else { msg })
     }
 }
 
-pub fn install_market_plugin(target: &str) -> Result<String, String> {
+/// 从 pnpm 输出中提取被构建白名单（allowBuilds）拦截的包 key。
+/// pnpm 11 格式："Ignored build scripts: misakanet. Run "pnpm approve-builds" ..."
+fn extract_blocked_build_key(text: &str) -> Option<String> {
+    const MARK: &str = "Ignored build scripts:";
+    if let Some(idx) = text.find(MARK) {
+        let rest = &text[idx + MARK.len()..];
+        let first = rest
+            .split(|c: char| c == ',' || c == '.' || c == '\n' || c == '\r')
+            .next()
+            .unwrap_or("")
+            .trim();
+        if !first.is_empty() {
+            return Some(first.to_string());
+        }
+    }
+    None
+}
+
+/// 逐行读取子进程输出流：实时写入启动器日志（前端日志区滚动显示），
+/// 同时保留尾部若干行供命令结果摘要使用。
+fn spawn_live_reader<R: std::io::Read + Send + 'static>(
+    app: tauri::AppHandle,
+    stream: R,
+    level: &'static str,
+    cap: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+) {
+    const TAIL_CAP: usize = 300;
+    std::thread::spawn(move || {
+        use std::io::BufRead;
+        let mut r = std::io::BufReader::new(stream);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match r.read_line(&mut line) {
+                Ok(0) => break,
+                Ok(_) => {
+                    let t = line.trim_end().to_string();
+                    if t.is_empty() {
+                        continue;
+                    }
+                    crate::harness::append_log(&app, level, &format!("[插件] {t}"));
+                    if let Ok(mut v) = cap.lock() {
+                        if v.len() >= TAIL_CAP {
+                            v.remove(0);
+                        }
+                        v.push(t);
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+}
+
+/// 把包 key 加入 pnpm-workspace.yaml 的 allowBuilds 白名单（放行其构建脚本）。
+/// git 源插件带 prepare 构建脚本，pnpm 默认拦截，需要用户确认后放行。
+pub fn allow_builds(pkg: &str) -> Result<(), String> {
+    let pkg = pkg.trim();
+    if pkg.is_empty()
+        || pkg.contains("..")
+        || !pkg
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '@' | '/' | '-' | '_' | '.'))
+    {
+        return Err("非法的包名".to_string());
+    }
+    let f = profile_dir().join("pnpm-workspace.yaml");
+    let mut text = std::fs::read_to_string(&f).unwrap_or_default();
+    let entry = format!("  {pkg}: true");
+    if text.lines().any(|l| l.trim() == format!("{pkg}: true")) {
+        return Ok(());
+    }
+    if !text.ends_with('\n') {
+        text.push('\n');
+    }
+    if let Some(idx) = text.lines().position(|l| l.trim() == "allowBuilds:") {
+        // 已有 allowBuilds 块：插到块内最后一个条目之后
+        let mut lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
+        let mut insert_at = idx + 1;
+        for (i, l) in lines.iter().enumerate().skip(idx + 1) {
+            if l.starts_with(' ') || l.starts_with('\t') {
+                insert_at = i + 1;
+            } else {
+                break;
+            }
+        }
+        lines.insert(insert_at, entry.clone());
+        text = lines.join("\n") + "\n";
+    } else {
+        text.push_str(&format!("allowBuilds:\n{entry}\n"));
+    }
+    crate::prefs::atomic_write(&f, &text)
+}
+
+pub fn install_market_plugin(app: &tauri::AppHandle, target: &str) -> Result<String, String> {
     if !safe_target(target.trim()) {
         return Err("非法的安装目标".to_string());
     }
     let target = target.trim();
-    let before = dep_keys();
-    let msg = run_dsh_plugin(&["add", target])?;
-    let after = dep_keys();
-    if let Some(key) = after.into_iter().find(|k| !before.contains(k)) {
-        if !is_registered(&key) {
-            let patch = patch_path();
-            let before_text = std::fs::read_to_string(&patch).unwrap_or_default();
-            if let Err(e) = append_insert_entry_npm(&key, &key) {
-                return Err(e);
+    crate::harness::append_log(
+        app,
+        "info",
+        &format!("[插件] 开始安装 {target}（下载依赖中，日志会实时显示进度）"),
+    );
+    let msg = run_dsh_plugin_live(app, &["add", target])?;
+    // DSH 官方机制：`dsh plugin add` 之后会把“声明了 dsh.bundle 的依赖”自动
+    // 同步进 package.json 的 dsh.profile.bundles（bundle 层）才能被加载。
+    // 这里再兜底复刻一次 reconcile：兼容旧版 dsh（无自动 reconcile）或
+    // 手动 pnpm 安装的情况，避免“已安装但不生效”。
+    crate::harness::append_log(app, "info", "[插件] 依赖安装完成，正在同步 bundle 层…");
+    let added = reconcile_bundles()?;
+    if !added.is_empty() {
+        if !boot_probe_ok() {
+            for id in &added {
+                let _ = update_bundles(id, false);
             }
-            if let Err(e) = verify_profile() {
-                let _ = crate::prefs::atomic_write(&patch, &before_text);
-                return Err(format!("安装成功但注册失败（已回滚注册）：{e}"));
-            }
+            return Err(format!(
+                "安装成功，但插件会导致 DSH 启动失败，已自动回滚注册：{}",
+                added.join(", ")
+            ));
         }
+        return Ok(format!(
+            "{msg}\n已注册 bundle 层：{}（已通过启动自检），重启 DSH 后生效",
+            added.join(", ")
+        ));
     }
     Ok(msg)
 }
 
-pub fn uninstall_market_plugin(target: &str) -> Result<String, String> {
+pub fn uninstall_market_plugin(app: &tauri::AppHandle, target: &str) -> Result<String, String> {
     if !safe_target(target.trim()) {
         return Err("非法的卸载目标".to_string());
     }
     let target = target.trim();
-    let msg = run_dsh_plugin(&["remove", target])?;
+    crate::harness::append_log(
+        app,
+        "info",
+        &format!("[插件] 开始卸载 {target}（日志会实时显示进度）"),
+    );
+    let msg = run_dsh_plugin_live(app, &["remove", target])?;
     let _ = remove_insert_entry(target);
     let _ = remove_disable_entry(target);
     Ok(msg)
@@ -674,16 +817,22 @@ pub fn register_plugin(id: &str) -> Result<String, String> {
     if is_registered(id) {
         return Ok("插件已注册".to_string());
     }
-    let patch = patch_path();
-    let before = std::fs::read_to_string(&patch).unwrap_or_default();
-    if let Err(e) = append_insert_entry_npm(id, id) {
+    if !declares_bundle(id) {
+        return Err(format!(
+            "插件 {id} 未声明 dsh.bundle，DSH 不会把它作为插件加载（它只是普通依赖）"
+        ));
+    }
+    let pkg = profile_dir().join("package.json");
+    let before = std::fs::read_to_string(&pkg).unwrap_or_default();
+    if let Err(e) = update_bundles(id, true) {
         return Err(e);
     }
-    if let Err(e) = verify_profile() {
-        let _ = crate::prefs::atomic_write(&patch, &before);
-        return Err(e);
+    if !boot_probe_ok() {
+        let _ = update_bundles(id, false);
+        let _ = crate::prefs::atomic_write(&pkg, &before);
+        return Err(format!("插件 {id} 会导致 DSH 启动失败，已回滚注册"));
     }
-    Ok(format!("插件 {id} 已注册，重启 DSH 后生效"))
+    Ok(format!("插件 {id} 已注册（bundle 层，已通过启动自检），重启 DSH 后生效"))
 }
 
 fn patch_path() -> PathBuf {
@@ -714,6 +863,86 @@ fn bundle_names() -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// 检查一个已安装的 npm 依赖是否声明 `dsh.bundle` —— DSH 官方插件生效机制：
+/// 只有声明了 `dsh.bundle.patch` 的包才能作为 bundle 层被加载。
+fn declares_bundle(name: &str) -> bool {
+    let pkg = node_modules_dir(name).join("package.json");
+    let Ok(txt) = std::fs::read_to_string(pkg) else {
+        return false;
+    };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) else {
+        return false;
+    };
+    v.pointer("/dsh/bundle/patch")
+        .and_then(|p| p.as_str())
+        .is_some()
+}
+
+/// 复刻 DSH 官方 `dsh plugin` 的 reconcile：遍历已安装依赖，把声明了
+/// `dsh.bundle` 但尚未进入 `dsh.profile.bundles` 的包追加进 bundle 层。
+/// 幂等；返回本次实际新增的包名列表。
+fn reconcile_bundles() -> Result<Vec<String>, String> {
+    let pkg = profile_dir().join("package.json");
+    let text = std::fs::read_to_string(&pkg).map_err(|e| e.to_string())?;
+    let mut v: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    let deps: Vec<String> = v
+        .pointer("/dependencies")
+        .and_then(|d| d.as_object())
+        .map(|d| d.keys().cloned().collect())
+        .unwrap_or_default();
+    let mut bundles: Vec<String> = v
+        .pointer("/dsh/profile/bundles")
+        .and_then(|b| b.as_array())
+        .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+    let mut added = Vec::new();
+    for name in deps {
+        if declares_bundle(&name) && !bundles.contains(&name) {
+            bundles.push(name.clone());
+            added.push(name);
+        }
+    }
+    if !added.is_empty() {
+        if let Some(b) = v.pointer_mut("/dsh/profile/bundles") {
+            *b = serde_json::Value::Array(
+                bundles.into_iter().map(serde_json::Value::String).collect(),
+            );
+        }
+        crate::prefs::atomic_write(
+            &pkg,
+            &serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?,
+        )?;
+    }
+    Ok(added)
+}
+
+/// 把某个已安装的 bundle 插件加入/移出 `dsh.profile.bundles`（注册、启用、禁用）。
+/// 仅当列表实际变化时写盘。
+fn update_bundles(id: &str, add: bool) -> Result<(), String> {
+    let pkg = profile_dir().join("package.json");
+    let text = std::fs::read_to_string(&pkg).map_err(|e| e.to_string())?;
+    let mut v: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    let bundles = v
+        .pointer_mut("/dsh/profile/bundles")
+        .and_then(|b| b.as_array_mut())
+        .ok_or_else(|| "profile manifest 缺少 dsh.profile.bundles".to_string())?;
+    let before = bundles.len();
+    if add {
+        if !bundles.iter().any(|b| b.as_str() == Some(id)) {
+            bundles.push(serde_json::Value::String(id.to_string()));
+        }
+    } else {
+        bundles.retain(|b| b.as_str() != Some(id));
+    }
+    if bundles.len() != before {
+        crate::prefs::atomic_write(
+            &pkg,
+            &serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?,
+        )?;
+    }
+    Ok(())
+}
+
 fn is_registered(id: &str) -> bool {
     if bundle_names().iter().any(|b| b == id) {
         return true;
@@ -727,17 +956,6 @@ fn is_registered(id: &str) -> bool {
         }
     }
     false
-}
-
-fn append_insert_entry_npm(id: &str, pkg: &str) -> Result<(), String> {
-    let patch = patch_path();
-    let mut text = std::fs::read_to_string(&patch).unwrap_or_default();
-    if !text.ends_with('\n') {
-        text.push('\n');
-    }
-    text.push_str(&format!("- insert:\n    - id: {id}\n      name: {pkg}\n"));
-    crate::prefs::atomic_write(&patch, &text)?;
-    Ok(())
 }
 
 fn patch_has_insert(id: &str) -> bool {
@@ -804,12 +1022,23 @@ fn remove_disable_entry(id: &str) -> Result<(), String> {
 fn append_insert_entry(id: &str, entry: &str) -> Result<(), String> {
     let patch = patch_path();
     let mut text = std::fs::read_to_string(&patch).unwrap_or_default();
+    if let Some(idx) = text.lines().position(|l| l.trim() == "- insert:") {
+        // 已有 insert 块：在块头之后插入 id 行与 name 行，避免重复块头
+        let mut lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
+        lines.insert(idx + 1, format!("      name: ./plugins/{id}/{entry}"));
+        lines.insert(idx + 1, format!("    - id: {id}"));
+        text = lines.join("\n");
+    } else {
+        if !text.ends_with('\n') {
+            text.push('\n');
+        }
+        text.push_str(&format!(
+            "- insert:\n    - id: {id}\n      name: ./plugins/{id}/{entry}\n"
+        ));
+    }
     if !text.ends_with('\n') {
         text.push('\n');
     }
-    text.push_str(&format!(
-        "- insert:\n    - id: {id}\n      name: ./plugins/{id}/{entry}\n"
-    ));
     crate::prefs::atomic_write(&patch, &text)?;
     Ok(())
 }
@@ -817,10 +1046,20 @@ fn append_insert_entry(id: &str, entry: &str) -> Result<(), String> {
 fn append_disable_entry(id: &str) -> Result<(), String> {
     let patch = patch_path();
     let mut text = std::fs::read_to_string(&patch).unwrap_or_default();
+    if let Some(idx) = text.lines().position(|l| l.trim() == "- disable:") {
+        // 已有 disable 块：在块头之后插入条目行，避免重复块头
+        let mut lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
+        lines.insert(idx + 1, format!("    - id: {id}"));
+        text = lines.join("\n");
+    } else {
+        if !text.ends_with('\n') {
+            text.push('\n');
+        }
+        text.push_str(&format!("- disable:\n    - id: {id}\n"));
+    }
     if !text.ends_with('\n') {
         text.push('\n');
     }
-    text.push_str(&format!("- disable:\n    - id: {id}\n"));
     crate::prefs::atomic_write(&patch, &text)?;
     Ok(())
 }
@@ -868,6 +1107,54 @@ fn verify_profile() -> Result<(), String> {
     }
 }
 
+/// 真实拉起一次 `dsh web`（随机端口），确认插件树能成功加载。
+/// 25 秒内未崩溃 = 已就绪（返回 true）；提前退出 = 加载失败（返回 false）。
+fn boot_probe_ok() -> bool {
+    let Ok(dsh) = crate::harness::find_dsh() else {
+        return false;
+    };
+    let home = dsh_home();
+    use std::io::Read;
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let Ok(mut child) = std::process::Command::new("cmd")
+        .args(["/C", &dsh, "web", "--host", "127.0.0.1", "--port", "0"])
+        .env("DSH_HOME", &home)
+        .creation_flags(CREATE_NO_WINDOW)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    else {
+        return false;
+    };
+    let mut out = child.stdout.take();
+    let mut err = child.stderr.take();
+    let reader = std::thread::spawn(move || {
+        let mut s = String::new();
+        let _ = out.as_mut().map(|o| o.read_to_string(&mut s));
+        s
+    });
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(25);
+    let mut alive = true;
+    loop {
+        if let Ok(Some(_)) = child.try_wait() {
+            alive = false;
+            break;
+        }
+        if std::time::Instant::now() >= deadline {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(400));
+    }
+    if alive {
+        let _ = child.kill();
+    }
+    let _ = child.wait();
+    let _ = err.as_mut().map(|e| e.read_to_string(&mut String::new()));
+    let _ = reader.join();
+    alive
+}
+
 pub fn set_plugin_enabled(id: &str, enabled: bool) -> Result<(), String> {
     if !valid_plugin_id(id) {
         return Err("非法插件 ID".to_string());
@@ -876,6 +1163,8 @@ pub fn set_plugin_enabled(id: &str, enabled: bool) -> Result<(), String> {
     let dir = profile_dir().join("plugins").join(id);
     if dir.is_dir() {
         let entry = plugin_entry(&dir);
+        let patch = patch_path();
+        let before = std::fs::read_to_string(&patch).unwrap_or_default();
         if enabled {
             if !patch_has_insert(id) {
                 append_insert_entry(id, &entry)?;
@@ -883,9 +1172,34 @@ pub fn set_plugin_enabled(id: &str, enabled: bool) -> Result<(), String> {
         } else {
             remove_insert_entry(id)?;
         }
+        if let Err(e) = verify_profile() {
+            let _ = crate::prefs::atomic_write(&patch, &before);
+            return Err(e);
+        }
         return Ok(());
     }
-    // 内置本家 / 第三方 bundle：通过 disable 条目控制
+    // 扩展（npm 依赖）：bundle 型通过 dsh.profile.bundles 启停；非 bundle 无法加载
+    if dep_keys().iter().any(|k| k == id) {
+        if !declares_bundle(id) {
+            return Err(format!(
+                "插件 {id} 未声明 dsh.bundle，DSH 不会加载它；它只是普通依赖"
+            ));
+        }
+        let pkg = profile_dir().join("package.json");
+        let before = std::fs::read_to_string(&pkg).unwrap_or_default();
+        if let Err(e) = update_bundles(id, enabled) {
+            return Err(e);
+        }
+        // 清理旧版 launcher 可能写下的无效 patch 残留（insert/disable 对 npm bundle 无效）
+        let _ = remove_insert_entry(id);
+        let _ = remove_disable_entry(id);
+        if let Err(e) = verify_profile() {
+            let _ = crate::prefs::atomic_write(&pkg, &before);
+            return Err(e);
+        }
+        return Ok(());
+    }
+    // 内置本家 / 模板 bundle：通过 disable 条目控制
     if id.starts_with("@deepseek-ai/") || bundle_names().iter().any(|b| b == id) {
         let patch = patch_path();
         let before = std::fs::read_to_string(&patch).unwrap_or_default();
@@ -908,30 +1222,10 @@ pub fn set_plugin_enabled(id: &str, enabled: bool) -> Result<(), String> {
         }
         return Ok(());
     }
-    // 扩展（npm 依赖）：启用=insert 注册，禁用=移除注册
-    if !dep_keys().iter().any(|k| k == id) {
-        return Err("未找到该插件".to_string());
-    }
-    let patch = patch_path();
-    let before = std::fs::read_to_string(&patch).unwrap_or_default();
-    if enabled {
-        if !is_registered(id) {
-            append_insert_entry_npm(id, id)?;
-        } else if patch_has_disable(id) {
-            remove_disable_entry(id)?;
-        }
-    } else {
-        remove_insert_entry(id)?;
-        remove_disable_entry(id)?;
-    }
-    if let Err(e) = verify_profile() {
-        let _ = crate::prefs::atomic_write(&patch, &before);
-        return Err(e);
-    }
-    Ok(())
+    Err("未找到该插件".to_string())
 }
 
-pub fn remove_plugin(id: &str) -> Result<String, String> {
+pub fn remove_plugin(app: &tauri::AppHandle, id: &str) -> Result<String, String> {
     if !valid_plugin_id(id) {
         return Err("非法插件 ID".to_string());
     }
@@ -971,7 +1265,12 @@ pub fn remove_plugin(id: &str) -> Result<String, String> {
             msgs.push("已从 bundles 注册中移除".to_string());
         }
         if is_dep {
-            let r = run_dsh_plugin(&["remove", id])?;
+            crate::harness::append_log(
+                app,
+                "info",
+                &format!("[插件] 正在卸载依赖 {id}（日志会实时显示进度）"),
+            );
+            let r = run_dsh_plugin_live(app, &["remove", id])?;
             msgs.push(r);
         }
         return Ok(msgs.join("；"));

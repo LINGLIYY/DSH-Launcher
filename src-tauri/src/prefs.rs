@@ -3,30 +3,6 @@ use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(default)]
-pub struct KanbanPrefs {
-    pub enabled: bool,
-    pub width: u32,
-    pub opacity: f64,
-    pub position: String,
-    pub avoid: bool,
-    pub custom_src: String,
-}
-
-impl Default for KanbanPrefs {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            width: 340,
-            opacity: 0.38,
-            position: "rb".to_string(),
-            avoid: false,
-            custom_src: String::new(),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(default)]
 pub struct WindowPrefs {
     pub x: Option<i32>,
     pub y: Option<i32>,
@@ -48,9 +24,9 @@ impl Default for WindowPrefs {
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct LauncherPrefs {
-    pub kanban: KanbanPrefs,
+    /// 多端列表（前端 localStorage 为主，保存时同步到这里，供开机自启
+    /// 等后端场景读取当前激活端）。
     pub endpoints: serde_json::Value,
-    pub drawer_width: u32,
     pub close_behavior: String,
     pub single_instance: bool,
     pub remember_window: bool,
@@ -68,9 +44,7 @@ pub struct LauncherPrefs {
 impl Default for LauncherPrefs {
     fn default() -> Self {
         Self {
-            kanban: KanbanPrefs::default(),
             endpoints: serde_json::json!([]),
-            drawer_width: 440,
             close_behavior: "tray".to_string(),
             single_instance: true,
             remember_window: true,

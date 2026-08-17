@@ -80,7 +80,7 @@ fn set_status(app: &AppHandle, status: &str, text: &str) {
     );
 }
 
-fn append_log(app: &AppHandle, level: &str, text: &str) {
+pub fn append_log(app: &AppHandle, level: &str, text: &str) {
     let line = LogLine {
         level: level.to_string(),
         text: text.to_string(),
@@ -99,6 +99,13 @@ fn append_log(app: &AppHandle, level: &str, text: &str) {
         if save_log {
             if let Some(parent) = inner.log_path.parent() {
                 let _ = std::fs::create_dir_all(parent);
+                // 超过 5MB 轮转：launcher.log -> launcher.log.1（覆盖旧轮转）
+                if let Ok(meta) = std::fs::metadata(&inner.log_path) {
+                    if meta.len() > 5 * 1024 * 1024 {
+                        let rotated = inner.log_path.with_extension("log.1");
+                        let _ = std::fs::rename(&inner.log_path, &rotated);
+                    }
+                }
                 if let Ok(mut f) = std::fs::OpenOptions::new()
                     .create(true)
                     .append(true)
@@ -189,6 +196,14 @@ pub async fn start(
         }
         append_log(&app, "info", &format!("检测到 {url} 已有 DSH 实例，直接接管"));
         set_status(&app, "ready", "运行中");
+        // 接管已有实例时同样遵守“DSH 启动后自动打开浏览器”
+        let auto_open = app
+            .try_state::<crate::PrefsState>()
+            .map(|s| s.inner.lock().unwrap().auto_open_browser)
+            .unwrap_or(false);
+        if auto_open {
+            let _ = open_url(&url);
+        }
         return Ok(());
     }
 
@@ -210,7 +225,9 @@ pub async fn start(
 
     let (child, pid, stdout, stderr) = if is_wsl {
         let d = distro.clone().ok_or_else(|| "WSL 发行版名称为空".to_string())?;
-        let bind_host = "0.0.0.0";
+        // WSL2 的 localhost 转发支持回环绑定，Windows 侧仍可经 127.0.0.1 访问；
+        // 不绑 0.0.0.0，避免把服务暴露到 WSL 虚拟网卡/局域网。
+        let bind_host = "127.0.0.1";
         let script = if workspace == "~" {
             format!("{} web --host {} --port {}", sh_quote(&dsh_path), bind_host, port)
         } else {
@@ -250,12 +267,14 @@ pub async fn start(
         (child, pid, stdout, stderr)
     };
 
-    {
+    let gen = {
         let state = app.state::<HarnessState>();
         let mut inner = state.inner.lock().unwrap();
         inner.pid = Some(pid);
         inner.child = Some(child);
-    }
+        inner.generation += 1;
+        inner.generation
+    };
 
     let mut reader_handles = Vec::new();
     if let Some(out) = stdout {
@@ -274,6 +293,15 @@ pub async fn start(
     tauri::async_runtime::spawn(async move {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
         loop {
+            // 已被 stop/重启（generation 变化）：静默退出，不覆盖新状态
+            let stale = {
+                let state = app2.state::<HarnessState>();
+                let inner = state.inner.lock().unwrap();
+                inner.generation != gen
+            };
+            if stale {
+                return;
+            }
             let u = {
                 let state = app2.state::<HarnessState>();
                 let inner = state.inner.lock().unwrap();
@@ -340,11 +368,57 @@ fn spawn_reader<R: std::io::Read + Send + 'static>(
     })
 }
 
-pub async fn stop(app: AppHandle) -> Result<(), String> {
+fn pid_alive(pid: u32) -> bool {
+    let out = std::process::Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+        .output();
+    match out {
+        Ok(o) => String::from_utf8_lossy(&o.stdout).contains(&pid.to_string()),
+        Err(_) => false,
+    }
+}
+
+fn kill_port_listener(port: u16) -> bool {
+    let out = std::process::Command::new("netstat")
+        .args(["-ano", "-p", "tcp"])
+        .output();
+    let Ok(out) = out else {
+        return false;
+    };
+    if !out.status.success() {
+        return false;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut pids = std::collections::HashSet::new();
+    for line in text.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 5 {
+            continue;
+        }
+        if parts[3] == "LISTENING" && parts[1].ends_with(&format!(":{port}")) {
+            if let Ok(pid) = parts[4].parse::<u32>() {
+                pids.insert(pid);
+            }
+        }
+    }
+    let mut killed = false;
+    for pid in pids {
+        let r = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .output();
+        if r.map(|o| o.status.success()).unwrap_or(false) {
+            killed = true;
+        }
+    }
+    killed
+}
+
+pub async fn stop(app: AppHandle, force: bool) -> Result<(), String> {
     let (pid, distro, port) = {
         let state = app.state::<HarnessState>();
         let mut inner = state.inner.lock().unwrap();
         inner.child = None;
+        inner.generation += 1; // 使旧的就绪轮询任务退出
         let pid = inner.pid.take();
         let distro = inner.wsl_distro.take();
         let port = inner.wsl_port.take();
@@ -364,9 +438,60 @@ pub async fn stop(app: AppHandle) -> Result<(), String> {
                 ])
                 .output();
         }
+        // 先温和终止并等待，避免强杀打断 DSH 正在写入的会话文件
         let _ = std::process::Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .args(["/PID", &pid.to_string(), "/T"])
             .output();
+        let mut alive = true;
+        for _ in 0..10 {
+            if !pid_alive(pid) {
+                alive = false;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
+        if alive {
+            let _ = std::process::Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/T", "/F"])
+                .output();
+        }
+    } else if distro.is_none() {
+        // 未托管实例（端口接管场景）：探测端口，外部实例仍在运行就不假装“已停止”
+        let url = {
+            let state = app.state::<HarnessState>();
+            let inner = state.inner.lock().unwrap();
+            format!("http://{}:{}/", inner.host, inner.port)
+        };
+        let alive = tauri::async_runtime::spawn_blocking(move || http_ready(&url))
+            .await
+            .unwrap_or(false);
+        if alive {
+            if force {
+                let port = {
+                    let state = app.state::<HarnessState>();
+                    let inner = state.inner.lock().unwrap();
+                    inner.port
+                };
+                let killed =
+                    tauri::async_runtime::spawn_blocking(move || kill_port_listener(port))
+                        .await
+                        .unwrap_or(false);
+                if killed {
+                    append_log(&app, "info", "已强制终止外部 DSH 实例（非本启动器托管）");
+                    set_status(&app, "stopped", "已停止");
+                    return Ok(());
+                }
+                append_log(&app, "err", "强制终止失败：未能定位端口上的监听进程");
+                return Ok(());
+            }
+            append_log(
+                &app,
+                "info",
+                "检测到外部实例仍在运行（非本启动器托管），未执行停止",
+            );
+            set_status(&app, "ready", "运行中（外部实例）");
+            return Ok(());
+        }
     }
     let readers = {
         let state = app.state::<HarnessState>();

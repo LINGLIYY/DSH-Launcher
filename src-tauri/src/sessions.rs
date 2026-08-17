@@ -187,8 +187,12 @@ pub fn list(filter: &str) -> Vec<SessionInfo> {
 }
 
 fn make_snippet(text: &str, byte_pos: usize) -> String {
+    let mut safe = byte_pos.min(text.len());
+    while safe > 0 && !text.is_char_boundary(safe) {
+        safe -= 1;
+    }
     let chars: Vec<char> = text.chars().collect();
-    let match_idx = text[..byte_pos].chars().count();
+    let match_idx = text[..safe].chars().count();
     let start = match_idx.saturating_sub(45);
     let end = (match_idx + 90).min(chars.len());
     let seg: String = chars[start..end].iter().collect();
@@ -212,7 +216,7 @@ pub fn search(query: &str, limit: usize) -> Vec<SessionHit> {
     if !root.is_dir() {
         return out;
     }
-    for ws in std::fs::read_dir(&root).into_iter().flatten().flatten() {
+    'outer: for ws in std::fs::read_dir(&root).into_iter().flatten().flatten() {
         let ws_dir = ws.path();
         if !ws_dir.is_dir() {
             continue;
@@ -246,10 +250,10 @@ pub fn search(query: &str, limit: usize) -> Vec<SessionHit> {
                 workspace: ws_name.clone(),
                 title: title.clone(),
                 mtime_ms,
-                snippet: make_snippet(&lower, pos),
+                snippet: make_snippet(&text, pos),
             });
             if out.len() >= limit.max(1) {
-                return out;
+                break 'outer;
             }
         }
     }
@@ -558,4 +562,106 @@ pub fn empty_trash() -> Result<usize, String> {
         }
     }
     Ok(count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn valid_id_rejects_bad_ids() {
+        assert!(!valid_id(""));
+        assert!(!valid_id("."));
+        assert!(!valid_id(".."));
+        assert!(!valid_id("a/b"));
+        assert!(!valid_id("a\\b"));
+        assert!(!valid_id("a:b"));
+        assert!(!valid_id("a\u{1}b"));
+    }
+
+    #[test]
+    fn valid_id_accepts_normal_id() {
+        assert!(valid_id("abc-123"));
+    }
+
+    #[test]
+    fn truncate_chars_short_text_unchanged() {
+        assert_eq!(truncate_chars("abc", 5), "abc");
+        assert_eq!(truncate_chars("你好", 4), "你好");
+        assert_eq!(truncate_chars("你好世界", 4), "你好世界");
+    }
+
+    #[test]
+    fn truncate_chars_appends_ellipsis() {
+        let s = truncate_chars("你好世界", 3);
+        assert_eq!(s, "你好世…");
+        assert!(s.ends_with('…'));
+        assert_eq!(s.chars().last(), Some('…'));
+    }
+
+    #[test]
+    fn make_snippet_keeps_original_case_and_handles_non_boundary() {
+        let text = "Hello 世界 World";
+        // byte 10 lands inside "界" (bytes 9..=11), so it exercises the
+        // char-boundary walk-back and must not panic.
+        let snippet = make_snippet(text, 10);
+        assert!(snippet.contains('W'), "snippet lost original case: {snippet}");
+        assert!(snippet.contains("Hello"), "snippet: {snippet}");
+        assert!(snippet.contains("世界"), "snippet: {snippet}");
+        assert!(!snippet.contains("hello"), "snippet was lowercased: {snippet}");
+    }
+
+    #[test]
+    fn header_and_title_extracts_cwd_and_title() {
+        let text = "{\"type\":\"session\",\"cwd\":\"C:\\\\work\"}\n\
+                    {\"type\":\"session/title\",\"data\":{\"title\":\"我的会话\"}}\n";
+        let (cwd, title) = header_and_title(text);
+        assert_eq!(cwd, "C:\\work");
+        assert_eq!(title, "我的会话");
+    }
+
+    #[test]
+    fn header_and_title_defaults_when_no_title() {
+        let text = "{\"type\":\"session\",\"cwd\":\"C:\\\\work\"}\n";
+        let (cwd, title) = header_and_title(text);
+        assert_eq!(cwd, "C:\\work");
+        assert_eq!(title, "未命名会话");
+    }
+
+    #[test]
+    fn render_text_builds_blocks_in_order() {
+        let text = concat!(
+            "{\"type\":\"user/message\",\"data\":{\"content\":[{\"type\":\"text\",\"text\":\"你好\"}]}}\n",
+            "{\"type\":\"assistant/message\",\"data\":{\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"有什么可以帮你？\"}]}}}\n",
+            "{\"type\":\"tool/call\",\"data\":{\"name\":\"read_file\",\"arguments\":\"read file\"}}\n",
+            "{\"type\":\"tool/result\",\"data\":{\"message\":{\"content\":[{\"type\":\"tool-result\",\"content\":[{\"type\":\"text\",\"text\":\"file contents\"}]}]}}}\n",
+        );
+        let blocks = render_text(text);
+        let kinds: Vec<&str> = blocks.iter().map(|b| b.kind.as_str()).collect();
+        assert_eq!(kinds, vec!["user", "assistant", "tool", "result"]);
+        assert_eq!(blocks[0].text, "你好");
+        assert_eq!(blocks[1].text, "有什么可以帮你？");
+        assert_eq!(blocks[2].text, "工具调用\nread_file\nread file");
+        assert_eq!(blocks[3].text, "file contents");
+    }
+
+    #[test]
+    fn render_text_filters_system_reminder() {
+        let text = concat!(
+            "{\"type\":\"user/message\",\"data\":{\"content\":[{\"type\":\"text\",\"text\":\"<system-reminder>忽略我</system-reminder>\"}]}}\n",
+            "{\"type\":\"user/message\",\"data\":{\"content\":[{\"type\":\"text\",\"text\":\"正常提问\"}]}}\n",
+        );
+        let blocks = render_text(text);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].kind, "user");
+        assert_eq!(blocks[0].text, "正常提问");
+    }
+
+    #[test]
+    fn render_text_empty_input_returns_info_block() {
+        let blocks = render_text("");
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].kind, "info");
+        assert_eq!(blocks[0].text, "（空会话）");
+    }
 }
