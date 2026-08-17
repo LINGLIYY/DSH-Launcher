@@ -732,10 +732,29 @@ body{background:var(--bg-window);overflow:hidden;position:relative;height:calc(1
       <div class="sub-tab-content active" data-sub="plugin">
         <div class="cap-toolbar">
           <input type="text" id="pluginSearch" placeholder="搜索插件名称...">
+          <select id="pluginKindFilter">
+            <option value="">全部分类</option>
+            <option value="builtin">内置</option>
+            <option value="extension">扩展</option>
+            <option value="selfdev">自研</option>
+          </select>
+          <select id="pluginStatusFilter">
+            <option value="">全部状态</option>
+            <option value="enabled">已启用</option>
+            <option value="disabled">已禁用</option>
+          </select>
+          <select id="pluginSort">
+            <option value="" selected>默认排序</option>
+            <option value="name">名称</option>
+            <option value="version">版本</option>
+            <option value="author">作者</option>
+            <option value="kind">分类</option>
+          </select>
+          <button class="btn-small" id="btnPluginDir" title="切换排序方向">升序</button>
+          <button class="btn-small" id="btnSelectAllPlugins">全选</button>
           <button class="btn-small" id="btnRefreshPlugin">刷新</button>
           <button class="btn-small" id="btnImportPlugin">导入本地</button>
           <button class="btn-small" id="btnOpenMarket">插件市场</button>
-          <button class="btn-small" id="btnSelectAllPlugins">全选</button>
         </div>
         <div id="pluginBatchBar" style="display:none;align-items:center;gap:8px;margin-bottom:8px;padding:8px 10px;background:#f0f5fb;border:1px solid var(--border-color);border-radius:4px;font-size:12px;flex-wrap:wrap">
           <span id="pluginBatchCount">0</span> 个已选
@@ -1425,6 +1444,29 @@ async function loadCapabilityData(){
   capLoaded=true;
 }
 let selectedPlugins=new Set();
+let pluginDir=1;
+function updatePluginDirBtn(){const b=$("btnPluginDir");if(b)b.textContent=pluginDir===1?"升序":"降序"}
+function filteredPluginList(){
+  const kw=($("pluginSearch")?.value||"").toLowerCase();
+  const kindFilter=$("pluginKindFilter")?.value||"";
+  const statusFilter=$("pluginStatusFilter")?.value||"";
+  const sortKey=$("pluginSort")?.value||"";
+  let list=pluginData.filter(p=>{
+    if(kw&&!((p.name||"").toLowerCase().includes(kw)||(p.id||"").toLowerCase().includes(kw)))return false;
+    if(kindFilter&&p.kind!==kindFilter)return false;
+    if(statusFilter==="enabled"&&!p.enabled)return false;
+    if(statusFilter==="disabled"&&p.enabled)return false;
+    return true;
+  });
+  const kindOrder={builtin:0,extension:1,selfdev:2};
+  const dir=pluginDir;
+  if(sortKey==="name")list=list.slice().sort((a,b)=>dir*(a.name||"").localeCompare(b.name||""));
+  else if(sortKey==="version")list=list.slice().sort((a,b)=>dir*String(a.version||"").localeCompare(String(b.version||""),undefined,{numeric:true}));
+  else if(sortKey==="author")list=list.slice().sort((a,b)=>dir*(a.author||"").localeCompare(b.author||""));
+  else if(sortKey==="kind")list=list.slice().sort((a,b)=>dir*((kindOrder[a.kind]??9)-(kindOrder[b.kind]??9)));
+  else list=list.slice().sort((a,b)=>dir*(((kindOrder[a.kind]??9)-(kindOrder[b.kind]??9))||(a.name||"").localeCompare(b.name||"")));
+  return list;
+}
 function updatePluginBatchBar(){
   const bar=$("pluginBatchBar"),count=$("pluginBatchCount");
   if(!bar)return;
@@ -1432,12 +1474,12 @@ function updatePluginBatchBar(){
   else{bar.style.display="none";count.textContent="0"}
 }
 function renderPlugins(){
-  const kw=($("pluginSearch")?.value||"").toLowerCase();
   const box=$("pluginList");box.innerHTML="";
   if(!pluginData||!pluginData.length){box.innerHTML='<div class="session-empty">暂无插件（可在「插件市场」安装，或「导入本地」目录）</div>';updatePluginBatchBar();return}
   const kindLabel={builtin:"内置",extension:"扩展",selfdev:"自研"};
   const kindCls={builtin:"tag-builtin",extension:"tag-third",selfdev:"tag-wsl"};
-  pluginData.filter(p=>!kw||(p.name||"").toLowerCase().includes(kw)||(p.id||"").toLowerCase().includes(kw)).forEach(p=>{
+  const list=filteredPluginList();
+  list.forEach(p=>{
     const card=document.createElement("div");card.className="cap-card";
     const tagCls=kindCls[p.kind]||"tag-third";
     const canToggle=p.kind==="builtin"||p.source==="local";
@@ -1519,9 +1561,13 @@ async function checkPluginUpdate(p,btn){
 }
 $("btnRefreshPlugin")?.addEventListener("click",async()=>{await fetchPlugins();renderPlugins()});
 $("pluginSearch")?.addEventListener("input",renderPlugins);
+$("pluginKindFilter")?.addEventListener("change",renderPlugins);
+$("pluginStatusFilter")?.addEventListener("change",renderPlugins);
+$("pluginSort")?.addEventListener("change",renderPlugins);
+$("btnPluginDir")?.addEventListener("click",()=>{pluginDir=pluginDir===1?-1:1;updatePluginDirBtn();renderPlugins()});
+updatePluginDirBtn();
 $("btnSelectAllPlugins")?.addEventListener("click",()=>{
-  const kw=($("pluginSearch")?.value||"").toLowerCase();
-  const list=pluginData.filter(p=>!kw||(p.name||"").toLowerCase().includes(kw)||(p.id||"").toLowerCase().includes(kw));
+  const list=filteredPluginList();
   const allSelected=list.length>0&&list.every(p=>selectedPlugins.has(p.id));
   if(allSelected){selectedPlugins.clear()}else{list.forEach(p=>selectedPlugins.add(p.id))}
   renderPlugins();
