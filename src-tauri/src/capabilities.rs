@@ -328,7 +328,7 @@ pub fn list_plugins() -> Vec<PluginInfo> {
             version,
             author,
             desc,
-            enabled: true,
+            enabled: is_registered(&name),
             builtin: false,
             skills: vec![],
             source: "npm".to_string(),
@@ -633,18 +633,111 @@ pub fn install_market_plugin(target: &str) -> Result<String, String> {
     if !safe_target(target.trim()) {
         return Err("非法的安装目标".to_string());
     }
-    run_dsh_plugin(&["add", target.trim()])
+    let target = target.trim();
+    let before = dep_keys();
+    let msg = run_dsh_plugin(&["add", target])?;
+    let after = dep_keys();
+    if let Some(key) = after.into_iter().find(|k| !before.contains(k)) {
+        if !is_registered(&key) {
+            let patch = patch_path();
+            let before_text = std::fs::read_to_string(&patch).unwrap_or_default();
+            if let Err(e) = append_insert_entry_npm(&key, &key) {
+                return Err(e);
+            }
+            if let Err(e) = verify_profile() {
+                let _ = crate::prefs::atomic_write(&patch, &before_text);
+                return Err(format!("安装成功但注册失败（已回滚注册）：{e}"));
+            }
+        }
+    }
+    Ok(msg)
 }
 
 pub fn uninstall_market_plugin(target: &str) -> Result<String, String> {
     if !safe_target(target.trim()) {
         return Err("非法的卸载目标".to_string());
     }
-    run_dsh_plugin(&["remove", target.trim()])
+    let target = target.trim();
+    let msg = run_dsh_plugin(&["remove", target])?;
+    let _ = remove_insert_entry(target);
+    let _ = remove_disable_entry(target);
+    Ok(msg)
+}
+
+pub fn register_plugin(id: &str) -> Result<String, String> {
+    if !valid_plugin_id(id) {
+        return Err("非法插件 ID".to_string());
+    }
+    if !dep_keys().iter().any(|k| k == id) {
+        return Err("该插件不是已安装的依赖，无法注册".to_string());
+    }
+    if is_registered(id) {
+        return Ok("插件已注册".to_string());
+    }
+    let patch = patch_path();
+    let before = std::fs::read_to_string(&patch).unwrap_or_default();
+    if let Err(e) = append_insert_entry_npm(id, id) {
+        return Err(e);
+    }
+    if let Err(e) = verify_profile() {
+        let _ = crate::prefs::atomic_write(&patch, &before);
+        return Err(e);
+    }
+    Ok(format!("插件 {id} 已注册，重启 DSH 后生效"))
 }
 
 fn patch_path() -> PathBuf {
     profile_dir().join("cordis.patch.yml")
+}
+
+fn dep_keys() -> Vec<String> {
+    let pkg = profile_dir().join("package.json");
+    std::fs::read_to_string(&pkg)
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v.get("dependencies").and_then(|d| d.as_object()).cloned())
+        .map(|d| d.keys().cloned().collect())
+        .unwrap_or_default()
+}
+
+fn bundle_names() -> Vec<String> {
+    let pkg = profile_dir().join("package.json");
+    std::fs::read_to_string(&pkg)
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v.pointer("/dsh/profile/bundles").and_then(|b| b.as_array()).cloned())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|b| b.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn is_registered(id: &str) -> bool {
+    if bundle_names().iter().any(|b| b == id) {
+        return true;
+    }
+    if let Ok(text) = std::fs::read_to_string(patch_path()) {
+        if text.lines().any(|l| {
+            let t = l.trim();
+            t == format!("- id: {id}") || t == format!("- id: \"{id}\"")
+        }) {
+            return true;
+        }
+    }
+    false
+}
+
+fn append_insert_entry_npm(id: &str, pkg: &str) -> Result<(), String> {
+    let patch = patch_path();
+    let mut text = std::fs::read_to_string(&patch).unwrap_or_default();
+    if !text.ends_with('\n') {
+        text.push('\n');
+    }
+    text.push_str(&format!("- insert:\n    - id: {id}\n      name: {pkg}\n"));
+    crate::prefs::atomic_write(&patch, &text)?;
+    Ok(())
 }
 
 fn patch_has_insert(id: &str) -> bool {
@@ -779,10 +872,21 @@ pub fn set_plugin_enabled(id: &str, enabled: bool) -> Result<(), String> {
     if !valid_plugin_id(id) {
         return Err("非法插件 ID".to_string());
     }
-    // 本地自研插件（insert 注册）：通过 insert 条目控制
+    // 本地自研插件（./plugins insert 注册）
     let dir = profile_dir().join("plugins").join(id);
-    if !dir.is_dir() {
-        // 其余（内置本家 / 扩展 / 第三方 bundle）：通过 disable 条目控制，写入后交给 dsh 校验，失败自动回滚
+    if dir.is_dir() {
+        let entry = plugin_entry(&dir);
+        if enabled {
+            if !patch_has_insert(id) {
+                append_insert_entry(id, &entry)?;
+            }
+        } else {
+            remove_insert_entry(id)?;
+        }
+        return Ok(());
+    }
+    // 内置本家 / 第三方 bundle：通过 disable 条目控制
+    if id.starts_with("@deepseek-ai/") || bundle_names().iter().any(|b| b == id) {
         let patch = patch_path();
         let before = std::fs::read_to_string(&patch).unwrap_or_default();
         let apply = || -> Result<(), String> {
@@ -804,13 +908,25 @@ pub fn set_plugin_enabled(id: &str, enabled: bool) -> Result<(), String> {
         }
         return Ok(());
     }
-    let entry = plugin_entry(&dir);
+    // 扩展（npm 依赖）：启用=insert 注册，禁用=移除注册
+    if !dep_keys().iter().any(|k| k == id) {
+        return Err("未找到该插件".to_string());
+    }
+    let patch = patch_path();
+    let before = std::fs::read_to_string(&patch).unwrap_or_default();
     if enabled {
-        if !patch_has_insert(id) {
-            append_insert_entry(id, &entry)?;
+        if !is_registered(id) {
+            append_insert_entry_npm(id, id)?;
+        } else if patch_has_disable(id) {
+            remove_disable_entry(id)?;
         }
     } else {
         remove_insert_entry(id)?;
+        remove_disable_entry(id)?;
+    }
+    if let Err(e) = verify_profile() {
+        let _ = crate::prefs::atomic_write(&patch, &before);
+        return Err(e);
     }
     Ok(())
 }
@@ -848,6 +964,8 @@ pub fn remove_plugin(id: &str) -> Result<String, String> {
         }
     }
     if in_bundles || is_dep {
+        let _ = remove_insert_entry(id);
+        let _ = remove_disable_entry(id);
         let mut msgs = Vec::new();
         if in_bundles {
             msgs.push("已从 bundles 注册中移除".to_string());

@@ -1525,6 +1525,7 @@ function renderPlugins(){
     const canToggle=p.kind==="builtin"||p.kind==="extension"||p.source==="local";
     const canUninstall=(p.kind==="extension"&&p.source!=="preset")||p.source==="local";
     const canCheck=p.kind==="extension"&&p.source==="npm";
+    const canRegister=p.kind==="extension"&&p.source==="npm"&&!p.enabled;
     card.innerHTML=`
       <div class="cc-head">
         <div style="display:flex;align-items:center;gap:8px;min-width:0">
@@ -1539,6 +1540,7 @@ function renderPlugins(){
       <div class="cc-actions">
         ${canToggle?`<button class="btn-small" data-act="toggle" data-id="${escapeHtml(p.id)}">${p.enabled?"禁用":"启用"}</button>`:""}
         ${canCheck?`<button class="btn-small" data-act="check" data-id="${escapeHtml(p.id)}">检查更新</button>`:""}
+        ${canRegister?`<button class="btn-small" data-act="register" data-id="${escapeHtml(p.id)}">注册</button>`:""}
         ${p.dir?`<button class="btn-small" data-act="open" data-id="${escapeHtml(p.id)}">打开目录</button>`:""}
         ${canUninstall?`<button class="btn-danger" data-act="uninstall" data-id="${escapeHtml(p.id)}">卸载</button>`:""}
       </div>`;
@@ -1564,6 +1566,10 @@ function renderPlugins(){
         });
       }
       else if(act==="check"){await checkPluginUpdate(p,btn)}
+      else if(act==="register"){
+        try{const r=await invoke("register_plugin",{id});appendLog(`[插件] ${r}`,"log-ready");await fetchPlugins();renderPlugins()}
+        catch(err){appendLog(`[插件] 注册失败：${err}`,"log-error")}
+      }
       else if(act==="update"){
         btn.disabled=true;btn.textContent="更新中...";
         try{const r=await invoke("install_market_plugin",{target:p.id});appendLog(`[插件] ${p.name} 已更新：${r}`,"log-ready");await fetchPlugins();renderPlugins()}

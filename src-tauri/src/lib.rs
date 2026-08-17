@@ -318,6 +318,13 @@ async fn install_market_plugin(target: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn register_plugin(id: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || capabilities::register_plugin(&id))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 async fn uninstall_market_plugin(target: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || capabilities::uninstall_market_plugin(&target))
         .await
@@ -823,6 +830,7 @@ pub fn run() {
             ping_endpoint,
             import_plugin,
             install_market_plugin,
+            register_plugin,
             uninstall_market_plugin,
             remove_plugin,
             set_plugin_enabled,
