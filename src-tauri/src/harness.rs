@@ -238,7 +238,6 @@ pub async fn start(
         let _ = std::fs::create_dir_all(&dsh_home);
         let mut cmd = std::process::Command::new("cmd");
         cmd.args(["/C", &dsh_path, "web", "--host", &host, "--port", &port.to_string()]);
-        cmd.current_dir(&workspace);
         cmd.env("DSH_HOME", &dsh_home);
         cmd.env("NO_COLOR", "1");
         cmd.creation_flags(CREATE_NO_WINDOW);

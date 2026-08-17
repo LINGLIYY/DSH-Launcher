@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DSH Desktop</title>
+<title>DSH Launcher</title>
 <style>
 :root{
   --bg-window:#f6f9fc;--card-bg:#ffffff;--primary-blue:#528ed8;
@@ -631,7 +631,7 @@ body{background:var(--bg-window);overflow:hidden;position:relative;height:calc(1
 <!-- ===== 主窗口 ===== -->
 <div class="window-container">
   <div class="win-header">
-    <h1>DSH Desktop</h1>
+    <h1>DSH Launcher</h1>
     <div class="header-right">
       <!-- 端切换器 -->
       <div class="endpoint-switcher">
@@ -651,7 +651,7 @@ body{background:var(--bg-window);overflow:hidden;position:relative;height:calc(1
 
   <div class="block">
     <div class="addr-bar">
-      <span class="path-text" id="workspacePath">工作区：D:\RJian\AIProjects\Projects\dsh-desktop</span>
+      <span class="path-text" id="installPath">安装目录：检测中...</span>
       <span class="link-url" id="openUrlLink">http://127.0.0.1:7602/</span>
     </div>
   </div>
@@ -669,9 +669,9 @@ body{background:var(--bg-window);overflow:hidden;position:relative;height:calc(1
     <div class="block">
       <div class="control-card">
         <div class="form-row">
-          <label>工作目录</label>
-          <input type="text" id="workspaceInput" value="D:\RJian\AIProjects\Projects\dsh-desktop">
-          <button class="btn-small" id="btnPickWorkspace">浏览...</button>
+          <label>安装目录</label>
+          <input type="text" id="dshInstallText" value="检测中..." readonly>
+          <button class="btn-small" id="btnCopyInstall">复制</button>
         </div>
         <div class="form-row">
           <label>访问地址</label>
@@ -869,8 +869,6 @@ function setActiveEndpoint(id){
   updateEndpointUI();
   // 切换端后刷新所有数据
   const ep=currentEndpoint();
-  $("workspaceInput").value=ep.workspace||"";
-  $("workspacePath").textContent="工作区："+(ep.workspace||"未设置");
   $("urlInput").value=`http://127.0.0.1:${ep.port}/`;
   $("openUrlLink").textContent=`http://127.0.0.1:${ep.port}/`;
   appendLog(`[多端] 已切换到「${ep.name}」（${ep.type}，端口 ${ep.port}）`,"log-ready");
@@ -1261,7 +1259,7 @@ $("btnStart").onclick=async function(){
   const ep=currentEndpoint();
   appendLog(`正在启动「${ep.name}」的 DSH 基座（端口 ${ep.port}）...`,"log-start");
   try{
-    await invoke("start_harness",{workspace:$("workspaceInput").value,port:ep.port,endpoint_id:ep.id,endpoint:ep});
+    await invoke("start_harness",{port:ep.port,endpoint_id:ep.id,endpoint:ep});
     if(!HAS_TAURI){
       setTimeout(()=>{
         appendLog(`DSH Web 服务就绪：http://127.0.0.1:${ep.port}/`,"log-ready");
@@ -1306,7 +1304,12 @@ async function loadDshVersion(){
   try{
     const v=await invoke("dsh_version");
     $("dshVersionText").value=v.version||"未知";
-    if(v.path)$("dshVersionText").title=v.path;
+    if(v.path){
+      $("dshVersionText").title=v.path;
+      const dir=v.path.replace(/[\\/][^\\/]*$/,"");
+      if($("dshInstallText"))$("dshInstallText").value=dir;
+      if($("installPath"))$("installPath").textContent="安装目录："+dir;
+    }
   }catch(e){$("dshVersionText").value="检测失败"}
 }
 async function checkDshUpdate(){
@@ -1343,10 +1346,7 @@ $("btnClearCache")?.addEventListener("click",()=>showConfirm("清空启动器缓
   catch(e){appendLog("清空失败："+e,"log-error")}
 }));
 $("btnHideTray").onclick=()=>invoke("hide_to_tray");
-$("btnPickWorkspace").onclick=async function(){
-  const p=await invoke("pick_workspace");
-  if(p){$("workspaceInput").value=p;$("workspacePath").textContent="工作区："+p;invoke("set_workspace",{path:p})}
-};
+$("btnCopyInstall").onclick=()=>copyToClipboard($("dshInstallText")?.value||"","DSH 安装目录");
 
 /* ============================================================
    会话管理
@@ -1980,7 +1980,7 @@ async function loadEnvInfo(){
     {label:"DSH 路径",value:info.dsh_path||"未检测到",dir:null},
     {label:"DSH 版本",value:version||"未知",dir:null},
     {label:"DSH_HOME",value:info.dsh_home||"",dir:info.dsh_home||""},
-    {label:"工作区",value:info.workspace||"",dir:info.workspace||""},
+    {label:"安装目录",value:info.install_dir||"",dir:info.install_dir||""},
     {label:"访问端口",value:String(info.port||7602),dir:null},
     {label:"日志目录",value:info.logs_dir||"",dir:info.logs_dir||""},
     {label:"会话目录",value:info.sessions_dir||"",dir:info.sessions_dir||""},
@@ -2094,7 +2094,6 @@ if(HAS_TAURI&&window.__TAURI__.event){
     const s=await invoke("get_state");
     const ep=currentEndpoint();
     if(s){
-      if(s.workspace){ep.workspace=s.workspace;$("workspaceInput").value=s.workspace;$("workspacePath").textContent="工作区："+s.workspace}
       if(s.dsh_home){ep.dshHome=s.dsh_home}
       if(s.dsh_path){ep.path=s.dsh_path}
       if(s.url){$("urlInput").value=s.url;$("openUrlLink").textContent=s.url}

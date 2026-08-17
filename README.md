@@ -1,4 +1,4 @@
-# DSH Desktop
+# DSH Launcher
 
 A lightweight Windows desktop launcher for [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness).
 

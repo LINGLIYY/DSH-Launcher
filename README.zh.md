@@ -1,4 +1,4 @@
-# DSH Desktop
+# DSH Launcher
 
 面向 [DeepSeek Harness（DSH）](https://github.com/deepseek-ai/deepseek-harness) 的 Windows 轻量桌面启动器。
 

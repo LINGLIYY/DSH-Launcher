@@ -377,10 +377,15 @@ fn get_env_info(state: tauri::State<'_, HarnessState>) -> serde_json::Value {
     let exe = std::env::current_exe()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default();
+    let dsh_path = harness::find_dsh().unwrap_or_default();
+    let install_dir = std::path::Path::new(&dsh_path)
+        .parent()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
     serde_json::json!({
-        "dsh_path": harness::find_dsh().unwrap_or_default(),
+        "dsh_path": dsh_path,
         "dsh_home": inner.dsh_home,
-        "workspace": inner.workspace,
+        "install_dir": install_dir,
         "port": inner.port,
         "logs_dir": default_logs_dir(),
         "sessions_dir": format!("{}\\sessions", inner.dsh_home),
@@ -595,7 +600,7 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     )?;
 
     let mut builder = TrayIconBuilder::with_id("main-tray")
-        .tooltip("DSH Desktop")
+        .tooltip("DSH Launcher")
         .menu(&menu)
         .show_menu_on_left_click(false);
     if let Some(icon) = app.default_window_icon() {
