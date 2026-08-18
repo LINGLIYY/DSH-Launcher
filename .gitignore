@@ -15,9 +15,7 @@ resources/harness/
 downloads/
 .tmp-upstream-dsh/
 一些内容反馈/
-.dsh/*
-# 保留已跟踪的 UI 设计文档
-!.dsh/genui/
+.dsh/
 
 # === Python cache ===
 __pycache__/
