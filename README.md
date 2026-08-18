@@ -1,214 +1,214 @@
 # DSH Launcher
 
-A lightweight Windows desktop launcher for [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness).
+> [English version](README.en.md)
 
-> Current version: **v1.0 (2026-08-17)**
+面向 [DeepSeek Harness（DSH）](https://github.com/deepseek-ai/deepseek-harness) 的 Windows 轻量桌面启动器。
 
-It does **not** reimplement DSH and does **not** bundle Node/Electron. It wraps the globally installed `dsh` CLI into a friendlier desktop entry: async start/stop, system tray, live logs, session management, plugin marketplace, skill listing, multi-endpoint management, and crash protection.
+> 当前版本：**v1.0（2026-08-17）**
 
-For a detailed feature walkthrough in Chinese, see [项目介绍.md](项目介绍.md).
+它**不重新实现 DSH**，也不打包 Node/Electron，而是把官方全局安装的 `dsh` 命令行工具包装成更顺手的桌面入口：异步启动/停止、系统托盘、实时日志、会话管理、插件市场、技能列表、多端管理与防崩溃保护。
 
-## Screenshots
+## 界面预览
 
-![DSH Launcher main console](docs/images/screenshot-main.png)
+![DSH Launcher 主界面](docs/images/screenshot-main.png)
 
-*Console home: live logs + quick actions + endpoint switching*
+*控制台主页：实时日志 + 快速操作 + 端切换*
 
-![Plugin marketplace](docs/images/screenshot-market.png)
+![插件市场](docs/images/screenshot-market.png)
 
-*Capability Center: plugin marketplace / plugin management / skills / endpoints*
+*能力中心：插件市场 / 插件管理 / 技能列表 / 多端管理*
 
-> Screenshots are from v1.0. Actual UI may differ in newer versions.
-
----
-
-## Features
-
-- **Async startup**: Launches `dsh web` in the background without blocking the UI; auto-takes over existing instances on the same port
-- **System tray**: Minimize to tray on close, single-instance, quick-access tray menu
-- **Live logs**: Captures DSH stdout/stderr, color-coded by level, copy/export support, auto rotation
-- **Session manager**: Scans DSH sessions (zstd-compressed), groups by workspace, full-text search, Markdown export, restorable trash
-- **Plugin marketplace**: Community plugin listing, one-click install/update/uninstall, auto bundle-layer sync
-- **Skill manager**: Scans `SKILL.md` across directories, shows real skills and descriptions
-- **Multi-endpoint**: Local Windows + WSL distros unified, real connectivity checks
-- **Config editor**: Built-in `settings.yaml` and `cordis.patch.yml` editors with auto-backup on save
-- **Crash protection**: Auto-restore last config on consecutive startup failures, safe mode launch
-- **Kanban background**: Adjustable size/opacity/position, light-blue & white UI theme
+> 截图为 v1.0 版本，实际界面以最新版本为准。
 
 ---
 
-## Requirements
+## 功能特性
 
-### Required
+- **异步启动**：后台拉起 `dsh web`，界面不卡死；端口被占用时自动接管已有实例
+- **系统托盘**：关闭窗口最小化到托盘，单实例运行，托盘菜单直达常用操作
+- **实时日志**：捕获 DSH 标准输出/错误，按级别着色，支持复制与导出，自动轮转
+- **会话管理**：扫描 DSH 会话（zstd 压缩），按工作区分组，全文检索，导出 Markdown，回收站可恢复
+- **插件市场**：对接社区插件列表，一键安装/更新/卸载，自动同步 bundle 层生效
+- **技能管理**：扫描各目录下的 `SKILL.md`，展示真实技能与说明
+- **多端管理**：本地 Windows + WSL 发行版统一管理，连通检测真实执行
+- **配置编辑**：内置 `settings.yaml` 与 `cordis.patch.yml` 编辑器，保存前自动备份
+- **防崩溃**：连续启动失败自动恢复最近配置备份，支持安全模式启动
+- **看板娘背景**：可调尺寸/透明度/位置，浅蓝白界面风格
 
-- **Windows 10 / 11** (64-bit)
-- **Microsoft Edge WebView2 Runtime** (built into Win11; may need manual install on Win10)
-- **Node.js 18+** (for installing DSH)
-- **DSH itself** (global install):
+---
+
+## 环境要求
+
+### 必需
+
+- **Windows 10 / 11**（64 位）
+- **Microsoft Edge WebView2 Runtime**（Win11 自带，Win10 可能需手动安装）
+- **Node.js 18+**（用于安装 DSH 本体）
+- **DSH 本体**（全局安装）：
 
 ```powershell
 npm install -g @deepseek-ai/dsh
 dsh --version
 ```
 
-### For building from source
+### 从源码构建时额外需要
 
-- **Rust** stable (`x86_64-pc-windows-msvc`)
-- **Visual Studio 2022 Build Tools** with "Desktop development with C++"
+- **Rust** 稳定版（`x86_64-pc-windows-msvc`）
+- **Visual Studio 2022 Build Tools**，勾选「使用 C++ 的桌面开发」
 
 ---
 
-## Installation
+## 安装
 
-### Option 1: Download prebuilt binary (recommended)
+### 方式一：下载预编译版本（推荐）
 
-Grab the latest `dsh-launcher.exe` from the [Releases](https://github.com/LINGLIYY/DSH-Launcher/releases) page. Double-click to run — no installation needed.
+从 [Releases](https://github.com/LINGLIYY/DSH-Launcher/releases) 页面下载最新的 `dsh-launcher.exe`，双击即可运行，无需安装。
 
-> SmartScreen may warn on first run. Click "More info" → "Run anyway".
+> 首次运行可能被 SmartScreen 拦截，选择「更多信息」→「仍要运行」即可。
 
-### Option 2: Build from source
+### 方式二：从源码构建
 
 ```powershell
-# 1. Clone
+# 1. 克隆仓库
 git clone https://github.com/LINGLIYY/DSH-Launcher.git
 cd DSH-Launcher
 
-# 2. Build (requires MSVC environment)
+# 2. 构建（需要先配置 MSVC 环境）
 cmd /c ""C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" && cd /d %CD%\src-tauri && cargo build --release"
 
-# 3. Run
+# 3. 运行
 .\src-tauri\target\release\dsh-launcher.exe
 ```
 
-Artifact: `src-tauri\target\release\dsh-launcher.exe` (~7-8 MB)
+构建产物：`src-tauri\target\release\dsh-launcher.exe`（约 7-8 MB）
 
 ---
 
-## Quick Start
+## 快速开始
 
-1. Ensure DSH is installed globally (see Requirements)
-2. Double-click `dsh-launcher.exe`
-3. Click "Start DSH" and wait for status to show "Running"
-4. Click "Open DSH UI" to use DSH in your browser
-5. Closing the window minimizes to tray; right-click the tray icon for quick actions
-
----
-
-## Plugin Management
-
-### Install from marketplace
-
-1. Open "Capability Center" → "Plugin Marketplace"
-2. Browse or search, click "Install"
-3. Installation progress shows in the log panel; bundle layer syncs automatically
-4. Restart DSH to activate
-
-### Install local plugin
-
-1. "Capability Center" → "Plugins" → "Import local plugin"
-2. Select the plugin directory (must contain `package.json`)
-3. Auto-registers into `cordis.patch.yml`
-
-### How plugins take effect
-
-DSH only loads packages that meet **both**:
-1. The package's `package.json` declares `dsh.bundle.patch`
-2. The package is listed in the profile's `dsh.profile.bundles`
-
-The launcher syncs this automatically on install/register/open. Packages without `dsh.bundle` are labeled as "plain dependency, not loaded by DSH".
-
-### Plugin crash safety
-
-Installing/enabling a plugin triggers a boot probe (launches DSH on a random port to verify it doesn't crash). On failure, changes roll back automatically.
+1. 确保已全局安装 DSH（见上方环境要求）
+2. 双击 `dsh-launcher.exe` 启动
+3. 点击「启动 DSH」按钮，等待状态变为「运行中」
+4. 点击「打开 DSH 界面」在浏览器中使用 DSH
+5. 关闭窗口会最小化到托盘，右键托盘图标可快速操作
 
 ---
 
-## Configuration
+## 插件管理
 
-### Launcher preferences
+### 从市场安装
 
-Settings → General:
-- Auto-start DSH on launch, auto-open browser when ready
-- Close behavior: minimize to tray / quit
-- Always on top, auto-start on boot, UI zoom (80%-130%)
-- Log retention days, kanban parameters
+1. 打开「能力中心」→「插件市场」
+2. 浏览或搜索插件，点击「安装」
+3. 安装过程日志实时显示，完成后自动同步 bundle 层
+4. 重启 DSH 后插件生效
 
-### DSH runtime config
+### 手动安装本地插件
 
-Settings → Runtime:
-- `settings.yaml`: DSH main config
-- `cordis.patch.yml`: plugin registration layer (insert/disable)
+1. 「能力中心」→「插件管理」→「导入本地插件」
+2. 选择插件目录（需包含 `package.json`）
+3. 导入后自动注册到 `cordis.patch.yml`
 
-Auto-backed up before every save. Restart DSH to apply changes.
+### 插件生效机制
 
-### Import / Export
+DSH 只加载**同时满足以下条件**的包：
+1. 包内 `package.json` 声明了 `dsh.bundle.patch`
+2. 已进入 profile 的 `dsh.profile.bundles` 列表
 
-Settings → Data & Maintenance → Config Import/Export:
-- Choose what to export: launcher prefs / DSH runtime config / endpoints
-- Exports as JSON, importable on another machine
+启动器在安装/注册/打开能力中心时会自动同步，未声明 `dsh.bundle` 的依赖会被标注为「普通依赖，不会被 DSH 加载」。
 
----
+### 插件防崩溃
 
-## Crash Protection
-
-Plugin or config changes can break DSH startup. Three layers of protection:
-
-1. **Auto-backup**: Every `settings.yaml` / `cordis.patch.yml` save creates a backup (last 5 kept)
-2. **Auto-restore**: 2 consecutive startup failures → restore last good backup → retry automatically
-3. **Safe mode**: Manually launch with "Safe Mode" — temporarily moves current config aside and boots with defaults; original config preserved and restorable
-
-Find backup history, manual backup, and restore in Settings → Data & Maintenance → Crash Protection & Config Backups.
+安装/启用插件时会自动做启动自检（随机端口拉起 DSH 验证不崩溃），失败则自动回滚，避免「装了插件把 DSH 玩死」。
 
 ---
 
-## Data Directories
+## 配置说明
+
+### 启动器偏好
+
+在「设置」→「通用偏好」中配置：
+- 启动行为：启动时自动拉起 DSH、就绪后自动开浏览器
+- 关闭行为：最小化到托盘 / 直接退出
+- 窗口置顶、开机自启、界面缩放（80%-130%）
+- 日志保留天数、看板娘参数
+
+### DSH 运行配置
+
+在「设置」→「运行与用量」中编辑：
+- `settings.yaml`：DSH 主配置
+- `cordis.patch.yml`：插件注册层（insert/disable）
+
+保存前自动备份，修改后重启 DSH 生效。
+
+### 配置导入导出
+
+「设置」→「数据与维护」→「配置导入导出」：
+- 可选择导出启动器偏好 / DSH 运行配置 / 多端列表
+- 导出为 JSON 文件，可在其他机器导入恢复
+
+---
+
+## 防崩溃机制
+
+修改插件或配置可能导致 DSH 启动失败，启动器提供三重保护：
+
+1. **自动备份**：每次修改 `settings.yaml` / `cordis.patch.yml` 前自动备份，保留最近 5 份
+2. **自动恢复**：连续 2 次启动失败 → 自动恢复最近一份可用备份 → 自动重试
+3. **安全模式**：手动点击「安全模式启动」，临时移走当前配置用默认空配置启动，原配置保留可随时恢复
+
+在「设置」→「数据与维护」→「防崩溃与配置备份」中可查看备份历史、手动备份、恢复指定备份。
+
+---
+
+## 数据目录
 
 ```text
 %APPDATA%\dsh-launcher\
-├── harness\              # DSH runtime data
-│   ├── sessions\         # session files (grouped by workspace)
-│   ├── sessions_trash\   # session trash
-│   ├── profiles\web\     # profile config, plugins, node_modules
-│   ├── settings.yaml     # DSH main config
-│   ├── config-backups\   # auto config backups
-│   └── config-crash-backup\  # safe mode stashed config
+├── harness\              # DSH 运行数据
+│   ├── sessions\         # 会话文件（按工作区分组）
+│   ├── sessions_trash\   # 会话回收站
+│   ├── profiles\web\     # profile 配置、插件、node_modules
+│   ├── settings.yaml     # DSH 主配置
+│   ├── config-backups\   # 配置自动备份
+│   └── config-crash-backup\  # 安全模式临时存放的原配置
 ├── logs\
-│   └── launcher.log      # launcher log (auto-rotates at 5MB)
-└── launcher-prefs.json   # launcher preferences
+│   └── launcher.log      # 启动器日志（超过 5MB 自动轮转）
+└── launcher-prefs.json   # 启动器偏好
 ```
 
-Uninstalling or deleting the launcher directory does **not** affect these data.
+卸载或删除启动器目录**不会**影响以上数据。
 
 ---
 
-## FAQ
+## 常见问题
 
-**Q: "dsh command not found" on startup?**
-A: Install DSH first with `npm install -g @deepseek-ai/dsh`, then restart the launcher.
+**Q：启动时提示「未找到 dsh 命令」**
+A：请先执行 `npm install -g @deepseek-ai/dsh` 安装 DSH 本体，然后重启启动器。
 
-**Q: Port 7602 is in use?**
-A: By default the launcher takes over the existing instance. To change ports, go to Settings → Multi-endpoint and edit the current endpoint.
+**Q：端口 7602 被占用怎么办？**
+A：默认会自动接管已有实例。如需更换端口，在「设置」→「多端管理」中修改当前端端口。
 
-**Q: Plugin installed but not working?**
-A: Check if the plugin declares `dsh.bundle.patch`. Packages without it are plain dependencies and won't be loaded by DSH. Check the activation status in plugin details.
+**Q：插件装了但不生效？**
+A：检查插件是否声明了 `dsh.bundle.patch`。未声明的包只是普通依赖，DSH 不会加载。可在插件详情中查看生效状态。
 
-**Q: DSH keeps failing to start?**
-A: Try Settings → Crash Protection → "Safe Mode". If safe mode works, it's a config/plugin issue; restore backups one by one to isolate.
+**Q：DSH 一直启动失败？**
+A：尝试「设置」→「防崩溃」→「安全模式启动」。如果安全模式能启动，说明是配置或插件问题，可逐次恢复备份定位原因。
 
-**Q: How do I use WSL endpoints?**
-A: Settings → Multi-endpoint → "Auto-scan WSL". Detects `dsh` in each distro. WSL endpoints support start/stop and connectivity checks; session/plugin data still reads from the local Windows DSH_HOME.
-
----
-
-## Stack
-
-- **Shell**: Tauri 2 (Rust + system WebView2)
-- **Backend**: Rust (process management, session parsing, tray, plugin management)
-- **Frontend**: vanilla HTML / CSS / JavaScript (no framework, no build step)
-- **DSH runtime**: globally installed `@deepseek-ai/dsh` (not bundled)
+**Q：WSL 端怎么用？**
+A：「设置」→「多端管理」→「自动扫描 WSL」，会检测各发行版中的 `dsh` 路径。WSL 端支持启停与连通检测，会话/插件数据仍读取本机 Windows 的 DSH_HOME。
 
 ---
 
-## License
+## 技术栈
+
+- **桌面壳**：Tauri 2（Rust + 系统 WebView2）
+- **后端**：Rust（进程管理、会话解析、托盘、插件管理）
+- **前端**：原生 HTML / CSS / JavaScript（无框架，无构建步骤）
+- **DSH 本体**：全局安装的 `@deepseek-ai/dsh`（不在启动器内打包）
+
+---
+
+## 许可证
 
 [MIT License](LICENSE)
