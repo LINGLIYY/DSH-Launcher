@@ -1,14 +1,46 @@
+# === Dependencies ===
 node_modules/
-resources/harness/
-.npm-cache/
+
+# === Build artifacts ===
 dist/
 dist2/
 out/
+src-tauri/target/
+src-tauri/gen/
+resources/harness/
+*.pdb
+
+# === DSH runtime / temp ===
+.npm-cache/
 downloads/
 .tmp-upstream-dsh/
 一些内容反馈/
-*.log
+.dsh/*
+# 保留已跟踪的 UI 设计文档
+!.dsh/genui/
+
+# === Python cache ===
 __pycache__/
 *.pyc
-src-tauri/target/
-src-tauri/gen/
+*.pyo
+
+# === Logs ===
+*.log
+
+# === OS files ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === IDE / editor ===
+.vscode/
+.idea/
+*.swp
+*~
+.project
+.settings/
+
+# === Local env / secrets ===
+.env
+.env.*
+*.local
