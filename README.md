@@ -8,6 +8,18 @@ It does **not** reimplement DSH and does **not** bundle Node/Electron. It wraps 
 
 For a detailed feature walkthrough in Chinese, see [项目介绍.md](项目介绍.md).
 
+## Screenshots
+
+![DSH Launcher main console](docs/images/screenshot-main.png)
+
+*Console home: live logs + quick actions + endpoint switching*
+
+![Plugin marketplace](docs/images/screenshot-market.png)
+
+*Capability Center: plugin marketplace / plugin management / skills / endpoints*
+
+> Screenshots are from v1.0. Actual UI may differ in newer versions.
+
 ---
 
 ## Features
