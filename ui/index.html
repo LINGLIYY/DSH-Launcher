@@ -264,6 +264,20 @@
         </div>
         <div class="si-desc" style="margin-top:6px">导入会覆盖勾选范围内的同名配置项（未勾选的项保持当前值不变）。</div>
 
+        <h3 style="margin-top:20px">防崩溃与配置备份</h3>
+        <div class="si-desc" style="margin-bottom:10px">修改插件或配置可能导致 DSH 启动失败。启动器会在每次修改配置前自动备份，连续 2 次启动失败时自动恢复最近备份。也可手动操作：</div>
+        <div class="setting-item">
+          <button class="btn-small" id="btnBackupNow">立即备份当前配置</button>
+          <button class="btn-small" id="btnSafeMode" style="margin-left:6px">安全模式启动（空配置）</button>
+          <button class="btn-small" id="btnExitSafeMode" style="margin-left:6px;display:none">退出安全模式（恢复原配置）</button>
+        </div>
+        <div class="setting-item">
+          <div class="si-label"><span>配置备份历史（最近 5 份）</span></div>
+          <div id="backupList" style="margin-top:6px;font-size:12px;max-height:160px;overflow-y:auto">
+            <div class="si-desc">加载中...</div>
+          </div>
+        </div>
+
         <div class="reset-zone">
           <h4>危险操作区</h4>
           <p style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">重置操作不可撤销，请谨慎操作。</p>

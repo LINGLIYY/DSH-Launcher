@@ -314,6 +314,12 @@ pub async fn start(
                     .unwrap_or(false)
             };
             if ready {
+                // 启动成功：重置连续失败计数
+                {
+                    let state = app2.state::<crate::HarnessState>();
+                    let mut inner = state.inner.lock().unwrap();
+                    inner.consecutive_failures = 0;
+                }
                 append_log(&app2, "info", &format!("Harness 就绪: {u}"));
                 set_status(&app2, "ready", "运行中");
                 let auto_open = app2
@@ -335,12 +341,12 @@ pub async fn start(
             };
             if exited {
                 append_log(&app2, "err", "Harness 进程已退出");
-                set_status(&app2, "error", "异常 / 超时");
+                handle_start_failure(&app2, gen, "进程异常退出");
                 return;
             }
             if tokio::time::Instant::now() >= deadline {
                 append_log(&app2, "err", "等待超时：Harness 未在 120 秒内就绪");
-                set_status(&app2, "error", "异常 / 超时");
+                handle_start_failure(&app2, gen, "启动超时");
                 return;
             }
             tokio::time::sleep(Duration::from_secs(1)).await;
@@ -504,4 +510,84 @@ pub async fn stop(app: AppHandle, force: bool) -> Result<(), String> {
     append_log(&app, "info", "Harness 已停止");
     set_status(&app, "stopped", "已停止");
     Ok(())
+}
+
+/// 处理启动失败：递增连续失败计数，连续 2 次失败后自动恢复最近配置备份并重试一次。
+fn handle_start_failure(app: &AppHandle, gen: u64, reason: &str) {
+    let failures = {
+        let state = app.state::<crate::HarnessState>();
+        let mut inner = state.inner.lock().unwrap();
+        // 已被 stop/重启：不处理
+        if inner.generation != gen {
+            return;
+        }
+        inner.consecutive_failures += 1;
+        inner.consecutive_failures
+    };
+
+    set_status(app, "error", &format!("启动失败（{reason}）"));
+
+    if failures >= 2 {
+        append_log(
+            app,
+            "err",
+            &format!(
+                "[防崩溃] 连续 {} 次启动失败，疑似配置损坏，正在自动恢复最近备份…",
+                failures
+            ),
+        );
+        // 自动恢复最近一份配置备份
+        match crate::crashguard::latest_backup() {
+            Some(ts) => {
+                match crate::crashguard::restore_backup(&ts) {
+                    Ok(_) => {
+                        append_log(
+                            app,
+                            "info",
+                            &format!("[防崩溃] 已恢复配置备份（{}），正在重试启动…", ts),
+                        );
+                        // 重置失败计数，避免重试时再次触发恢复
+                        {
+                            let state = app.state::<crate::HarnessState>();
+                            let mut inner = state.inner.lock().unwrap();
+                            inner.consecutive_failures = 0;
+                        }
+                        // 用当前保存的参数重试一次（Windows 本地模式）
+                        let (ws, port) = {
+                            let state = app.state::<crate::HarnessState>();
+                            let inner = state.inner.lock().unwrap();
+                            (inner.workspace.clone(), inner.port)
+                        };
+                        let app3 = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = start(app3, ws, port, None).await;
+                        });
+                    }
+                    Err(e) => {
+                        append_log(
+                            app,
+                            "err",
+                            &format!("[防崩溃] 自动恢复失败：{}。建议使用「安全模式启动」", e),
+                        );
+                    }
+                }
+            }
+            None => {
+                append_log(
+                    app,
+                    "err",
+                    "[防崩溃] 未找到配置备份。建议使用「安全模式启动」或手动重置配置",
+                );
+            }
+        }
+    } else {
+        append_log(
+            app,
+            "info",
+            &format!(
+                "[防崩溃] 第 {} 次启动失败，再次失败将自动恢复最近配置备份",
+                failures
+            ),
+        );
+    }
 }

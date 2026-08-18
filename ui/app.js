@@ -1820,12 +1820,75 @@ $("btnResetAll")?.addEventListener("click",()=>showConfirm("重置全部配置",
 }));
 
 /* ============================================================
+   防崩溃：配置备份 / 安全模式
+   ============================================================ */
+async function loadBackupList(){
+  const box=$("backupList");if(!box)return;
+  try{
+    const list=await invoke("list_config_backups");
+    if(!list||list.length===0){box.innerHTML='<div class="si-desc">暂无备份（修改配置时会自动备份）</div>';return}
+    box.innerHTML=list.map(b=>{
+      const d=new Date(b.timestamp);
+      const ts=`${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+      const tags=[];
+      if(b.has_settings)tags.push("settings");
+      if(b.has_patch)tags.push("patch");
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)">
+        <span><b>${ts}</b> <span style="color:var(--text-secondary)">${escapeHtml(b.label)}</span> <span style="color:var(--text-secondary);font-size:11px">[${tags.join(",")}]</span></span>
+        <button class="btn-small" data-restore="${b.timestamp}">恢复</button>
+      </div>`;
+    }).join("");
+    box.querySelectorAll("button[data-restore]").forEach(btn=>{
+      btn.onclick=()=>{
+        const ts=btn.dataset.restore;
+        showConfirm("恢复配置备份",`确定要恢复该备份吗？当前 settings.yaml 与 cordis.patch.yml 将被覆盖，重启 DSH 后生效。`,async()=>{
+          try{await invoke("restore_config_backup",{timestamp:ts});appendLog("[防崩溃] 已恢复配置备份 "+ts,"log-ready");loadBackupList()}
+          catch(e){appendLog("[防崩溃] 恢复失败："+e,"log-error")}
+        });
+      };
+    });
+  }catch(e){box.innerHTML='<div class="si-desc">加载失败：'+escapeHtml(String(e))+'</div>'}
+}
+$("btnBackupNow")?.addEventListener("click",async()=>{
+  try{const ts=await invoke("backup_config_now",{label:"用户手动备份"});appendLog("[防崩溃] 已创建配置备份 "+ts,"log-ready");loadBackupList()}
+  catch(e){appendLog("[防崩溃] 备份失败："+e,"log-error")}
+});
+$("btnSafeMode")?.addEventListener("click",()=>{
+  showConfirm("安全模式启动","安全模式会临时移走当前配置（settings.yaml / cordis.patch.yml），用默认空配置启动 DSH。原配置会保留，可随时「退出安全模式」恢复。确定继续吗？",async()=>{
+    try{
+      await invoke("start_harness_safe",{});
+      appendLog("[安全模式] 已用默认配置启动 DSH","log-ready");
+      $("btnSafeMode").style.display="none";
+      $("btnExitSafeMode").style.display="";
+    }catch(e){appendLog("[安全模式] 启动失败："+e,"log-error")}
+  });
+});
+$("btnExitSafeMode")?.addEventListener("click",()=>{
+  showConfirm("退出安全模式","将恢复安全模式前的原有配置，重启 DSH 后生效。确定吗？",async()=>{
+    try{
+      const r=await invoke("exit_safe_mode");
+      appendLog(r?"[安全模式] 已恢复原有配置，重启 DSH 后生效":"[安全模式] 无待恢复的配置","log-ready");
+      $("btnSafeMode").style.display="";
+      $("btnExitSafeMode").style.display="none";
+    }catch(e){appendLog("[安全模式] 退出失败："+e,"log-error")}
+  });
+});
+// 初始化时检查是否处于安全模式
+(async()=>{
+  try{
+    const safe=await invoke("is_safe_mode");
+    if(safe){$("btnSafeMode").style.display="none";$("btnExitSafeMode").style.display=""}
+  }catch(e){}
+})();
+
+/* ============================================================
    初始化
    ============================================================ */
 applyKanban();
 updateEndpointUI();
 loadLauncherPrefs();
 loadCapabilityData();
+loadBackupList();
 loadDshVersion();
 updateStatus(false,false);
 appendLog("DSH Desktop 启动器已就绪","log-ready");

@@ -2,6 +2,7 @@ mod harness;
 mod sessions;
 mod capabilities;
 mod prefs;
+mod crashguard;
 
 use serde::Serialize;
 use std::collections::VecDeque;
@@ -32,6 +33,9 @@ pub struct HarnessInner {
     /// 启动/停止代数：每次 start/stop 递增，使旧的就绪轮询任务静默退出，
     /// 避免“点停止后状态又被轮询改回 error”的竞态。
     pub generation: u64,
+    /// 连续启动失败次数：启动成功重置为 0，失败递增。
+    /// 连续 2 次失败后自动恢复最近配置备份并重试。
+    pub consecutive_failures: u32,
 }
 
 impl HarnessInner {
@@ -51,6 +55,7 @@ impl HarnessInner {
             wsl_port: None,
             readers: Vec::new(),
             generation: 0,
+            consecutive_failures: 0,
         }
     }
 }
@@ -385,6 +390,8 @@ fn get_dsh_settings() -> Result<String, String> {
 
 #[tauri::command]
 fn set_dsh_settings(text: String) -> Result<(), String> {
+    // 防崩溃：修改前自动备份当前配置
+    let _ = crashguard::backup_current("修改 settings.yaml 前自动备份");
     let p = std::path::Path::new(&default_dsh_home()).join("settings.yaml");
     prefs::atomic_write(&p, &text)
 }
@@ -400,6 +407,8 @@ fn get_cordis_patch() -> Result<String, String> {
 
 #[tauri::command]
 fn set_cordis_patch(text: String) -> Result<(), String> {
+    // 防崩溃：修改前自动备份当前配置
+    let _ = crashguard::backup_current("修改 cordis.patch.yml 前自动备份");
     let p = std::path::Path::new(&default_dsh_home())
         .join("profiles")
         .join("web")
@@ -418,6 +427,51 @@ fn reset_dsh_config() -> Result<(), String> {
     let template = "# Your patch layer for this dsh profile, applied after every bundle layer:\n# a top-level YAML array of loader patch entries (id-targeted config\n# overrides, disables, and insert lists; `!!js` expressions allowed).\n[]\n";
     prefs::atomic_write(&patch, template)?;
     Ok(())
+}
+
+// === 防崩溃机制：配置备份 / 安全模式 ===
+
+#[tauri::command]
+fn list_config_backups() -> Vec<crashguard::ConfigBackup> {
+    crashguard::list_backups()
+}
+
+#[tauri::command]
+fn restore_config_backup(timestamp: String) -> Result<(), String> {
+    crashguard::restore_backup(&timestamp)
+}
+
+#[tauri::command]
+fn backup_config_now(label: Option<String>) -> Result<String, String> {
+    crashguard::backup_current(&label.unwrap_or_else(|| "手动备份".to_string()))
+}
+
+#[tauri::command]
+async fn start_harness_safe(
+    app: AppHandle,
+    port: Option<u16>,
+) -> Result<serde_json::Value, String> {
+    // 安全模式：把当前配置移到 crash-backup，用空配置启动
+    let moved = crashguard::stash_current_for_safe_mode()?;
+    if moved {
+        harness::append_log(&app, "info", "[安全模式] 已将当前配置移至 crash-backup，使用默认配置启动");
+    } else {
+        harness::append_log(&app, "info", "[安全模式] 无现有配置，直接使用默认配置启动");
+    }
+    let ws = default_workspace();
+    let port = port.unwrap_or(7602);
+    harness::start(app, ws, port, None).await?;
+    Ok(serde_json::json!({ "status": "starting-safe", "safe_mode": true }))
+}
+
+#[tauri::command]
+fn exit_safe_mode() -> Result<bool, String> {
+    crashguard::restore_from_crash_backup()
+}
+
+#[tauri::command]
+fn is_safe_mode() -> bool {
+    crashguard::is_in_safe_mode()
 }
 
 #[tauri::command]
@@ -946,6 +1000,12 @@ pub fn run() {
             get_cordis_patch,
             set_cordis_patch,
             reset_dsh_config,
+            list_config_backups,
+            restore_config_backup,
+            backup_config_now,
+            start_harness_safe,
+            exit_safe_mode,
+            is_safe_mode,
             get_env_info,
             get_launcher_prefs,
             set_launcher_prefs,
