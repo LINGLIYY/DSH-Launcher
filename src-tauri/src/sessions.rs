@@ -38,7 +38,7 @@ pub struct SessionHit {
 fn sessions_root() -> PathBuf {
     let base = std::env::var("APPDATA").unwrap_or_else(|_| "C:\\".to_string());
     PathBuf::from(base)
-        .join("dsh-desktop")
+        .join("dsh-launcher")
         .join("harness")
         .join("sessions")
 }
@@ -46,7 +46,7 @@ fn sessions_root() -> PathBuf {
 fn trash_root() -> PathBuf {
     let base = std::env::var("APPDATA").unwrap_or_else(|_| "C:\\".to_string());
     PathBuf::from(base)
-        .join("dsh-desktop")
+        .join("dsh-launcher")
         .join("harness")
         .join("sessions_trash")
 }

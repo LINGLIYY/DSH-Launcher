@@ -164,7 +164,7 @@ $("btnScanEndpoints")?.addEventListener("click",async()=>{
     if(!endpoints.some(e=>e.distro===f.distro)){
       endpoints.push({id:"ep-wsl-"+Date.now()+Math.random().toString(36).slice(2,6),
         name:f.name,type:"wsl",distro:f.distro,path:f.path,port:7600+endpoints.length,
-        workspace:"~",dshHome:"~/.config/dsh-desktop/harness",version:f.version,status:"stopped",active:false,ssh:""});
+        workspace:"~",dshHome:"~/.config/dsh-launcher/harness",version:f.version,status:"stopped",active:false,ssh:""});
       added++;
     }
   });
@@ -178,7 +178,7 @@ $("btnAddEndpoint")?.addEventListener("click",()=>{
   if(type==="ssh"){showConfirm("提示","SSH 远程端暂待开发：DSH 目前不能安全地直接暴露到公网，本版本不提供远程端点。",()=>{});return}
   if(!name||!path){showConfirm("提示","请填写端名称和 DSH 路径。",()=>{});return}
   endpoints.push({id:"ep-"+Date.now(),name,type,path,port:+$("newEpPort").value||7602,
-    workspace:$("newEpWorkspace").value.trim(),dshHome:"~/.config/dsh-desktop/harness",
+    workspace:$("newEpWorkspace").value.trim(),dshHome:"~/.config/dsh-launcher/harness",
     version:"未检测",status:"stopped",active:false,ssh:type==="ssh"?$("newEpSsh").value.trim():"",
     distro:type==="wsl"?"自定义":""});
   saveEndpoints();renderEndpointList();updateEndpointUI();
@@ -1761,7 +1761,7 @@ $("btnExportConfig")?.addEventListener("click",async()=>{
       out.cordis_patch=await invoke("get_cordis_patch").catch(()=>null);
     }
     const data=JSON.stringify(out,null,2);
-    const p=await invoke("save_text_file",{defaultName:"dsh-desktop-config.json",content:data});
+    const p=await invoke("save_text_file",{defaultName:"dsh-launcher-config.json",content:data});
     if(p)appendLog("[维护] 配置已导出："+p,"log-ready");
   }catch(e){appendLog("导出失败："+e,"log-error")}
 });
@@ -1891,7 +1891,7 @@ loadCapabilityData();
 loadBackupList();
 loadDshVersion();
 updateStatus(false,false);
-appendLog("DSH Desktop 启动器已就绪","log-ready");
+appendLog("DSH Launcher 启动器已就绪","log-ready");
 appendLog(`当前端：${currentEndpoint().name}（${typeLabel(currentEndpoint().type)}）`,"log-stop");
 appendLog("提示：点击顶部端名称可快速切换端；点击「设置」可配置看板娘、多端、用量等","log-stop");
 

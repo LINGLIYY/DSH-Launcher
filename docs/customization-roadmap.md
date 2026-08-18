@@ -1,6 +1,6 @@
-# DSH 自定义与功能扩展路线图
+﻿# DSH 自定义与功能扩展路线图
 
-> 本文是对「审查模式」之外的进一步推演：DSH（DeepSeek Harness）本身是一个 Cordis 插件运行时，DSH Desktop 在其上又叠加了一层桌面壳。绝大多数扩展不需要改核心，只需「加一个 preset / 加一个 skill / 加一个插件 / 加一个 patch」。下面按「投入产出比」排序给出可落地的方向。
+> 本文是对「审查模式」之外的进一步推演：DSH（DeepSeek Harness）本身是一个 Cordis 插件运行时，DSH Launcher 在其上又叠加了一层桌面壳。绝大多数扩展不需要改核心，只需「加一个 preset / 加一个 skill / 加一个插件 / 加一个 patch」。下面按「投入产出比」排序给出可落地的方向。
 
 ## 0. 一个心智模型
 
@@ -89,7 +89,7 @@ DSH 的能力来自四层，每一层都是扩展点：
 
 ## 6. 模型供应商与路由
 
-DSH Desktop 已支持 DeepSeek / OpenAI / Anthropic / Gemini / OpenRouter 等（Settings → Models）。可进一步：
+DSH Launcher 已支持 DeepSeek / OpenAI / Anthropic / Gemini / OpenRouter 等（Settings → Models）。可进一步：
 
 - 按任务路由模型：审查用强推理模型、摘要用廉价模型（`dsh-agent-default-model` + 路由策略）。
 - 子代理指定不同 provider/model（`tool-subagent` 的 `provider`/`model` 已支持覆盖）。
@@ -105,9 +105,9 @@ DSH Desktop 已支持 DeepSeek / OpenAI / Anthropic / Gemini / OpenRouter 等（
 
 ---
 
-## 8. Web UI 定制（DSH Desktop 特有）
+## 8. Web UI 定制（DSH Launcher 特有）
 
-DSH Desktop 已用 `patch-package` 定制侧边栏、布局、模型设置、交付物与 preset 导入导出（见 `patches/`）。同路线可加：
+DSH Launcher 已用 `patch-package` 定制侧边栏、布局、模型设置、交付物与 preset 导入导出（见 `patches/`）。同路线可加：
 
 - 预设选择器的分组/置顶/图标（审查模式想突出显示就在 `dsh-client-ui-agent-preset` 里加分组）。
 - 一键切换「模式 + 权限 + 模型」的快捷入口。

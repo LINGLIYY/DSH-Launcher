@@ -1,4 +1,4 @@
-# 网页 AI 辅助 UI 设计：判定机制与等待流程
+﻿# 网页 AI 辅助 UI 设计：判定机制与等待流程
 
 ## 背景
 
@@ -67,4 +67,4 @@ agent-browser --cdp 9222 eval "(() => { const c=document.querySelector('.send-bu
 
 ## 四、实施记录
 
-- 2026-08-16：Kimi（已登录）完成 DSH Desktop 窗口截图排版评审，P0 项（看板娘与日志分离、按钮分级、状态栏分隔）已落地。
+- 2026-08-16：Kimi（已登录）完成 DSH Launcher 窗口截图排版评审，P0 项（看板娘与日志分离、按钮分级、状态栏分隔）已落地。

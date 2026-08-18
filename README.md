@@ -50,7 +50,7 @@ dsh --version
 
 ### Option 1: Download prebuilt binary (recommended)
 
-Grab the latest `dsh-desktop.exe` from the [Releases](https://github.com/your-username/dsh-desktop/releases) page. Double-click to run — no installation needed.
+Grab the latest `dsh-launcher.exe` from the [Releases](https://github.com/LINGLIYY/DSH-Launcher/releases) page. Double-click to run — no installation needed.
 
 > SmartScreen may warn on first run. Click "More info" → "Run anyway".
 
@@ -58,24 +58,24 @@ Grab the latest `dsh-desktop.exe` from the [Releases](https://github.com/your-us
 
 ```powershell
 # 1. Clone
-git clone https://github.com/your-username/dsh-desktop.git
-cd dsh-desktop
+git clone https://github.com/LINGLIYY/DSH-Launcher.git
+cd DSH-Launcher
 
 # 2. Build (requires MSVC environment)
 cmd /c ""C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" && cd /d %CD%\src-tauri && cargo build --release"
 
 # 3. Run
-.\src-tauri\target\release\dsh-desktop.exe
+.\src-tauri\target\release\dsh-launcher.exe
 ```
 
-Artifact: `src-tauri\target\release\dsh-desktop.exe` (~7-8 MB)
+Artifact: `src-tauri\target\release\dsh-launcher.exe` (~7-8 MB)
 
 ---
 
 ## Quick Start
 
 1. Ensure DSH is installed globally (see Requirements)
-2. Double-click `dsh-desktop.exe`
+2. Double-click `dsh-launcher.exe`
 3. Click "Start DSH" and wait for status to show "Running"
 4. Click "Open DSH UI" to use DSH in your browser
 5. Closing the window minimizes to tray; right-click the tray icon for quick actions
@@ -152,7 +152,7 @@ Find backup history, manual backup, and restore in Settings → Data & Maintenan
 ## Data Directories
 
 ```text
-%APPDATA%\dsh-desktop\
+%APPDATA%\dsh-launcher\
 ├── harness\              # DSH runtime data
 │   ├── sessions\         # session files (grouped by workspace)
 │   ├── sessions_trash\   # session trash

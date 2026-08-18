@@ -48,7 +48,7 @@ dsh --version
 
 ### 方式一：下载预编译版本（推荐）
 
-从 [Releases](https://github.com/你的用户名/dsh-desktop/releases) 页面下载最新的 `dsh-desktop.exe`，双击即可运行，无需安装。
+从 [Releases](https://github.com/LINGLIYY/DSH-Launcher/releases) 页面下载最新的 `dsh-launcher.exe`，双击即可运行，无需安装。
 
 > 首次运行可能被 SmartScreen 拦截，选择「更多信息」→「仍要运行」即可。
 
@@ -56,24 +56,24 @@ dsh --version
 
 ```powershell
 # 1. 克隆仓库
-git clone https://github.com/你的用户名/dsh-desktop.git
-cd dsh-desktop
+git clone https://github.com/LINGLIYY/DSH-Launcher.git
+cd DSH-Launcher
 
 # 2. 构建（需要先配置 MSVC 环境）
 cmd /c ""C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" && cd /d %CD%\src-tauri && cargo build --release"
 
 # 3. 运行
-.\src-tauri\target\release\dsh-desktop.exe
+.\src-tauri\target\release\dsh-launcher.exe
 ```
 
-构建产物：`src-tauri\target\release\dsh-desktop.exe`（约 7-8 MB）
+构建产物：`src-tauri\target\release\dsh-launcher.exe`（约 7-8 MB）
 
 ---
 
 ## 快速开始
 
 1. 确保已全局安装 DSH（见上方环境要求）
-2. 双击 `dsh-desktop.exe` 启动
+2. 双击 `dsh-launcher.exe` 启动
 3. 点击「启动 DSH」按钮，等待状态变为「运行中」
 4. 点击「打开 DSH 界面」在浏览器中使用 DSH
 5. 关闭窗口会最小化到托盘，右键托盘图标可快速操作
@@ -150,7 +150,7 @@ DSH 只加载**同时满足以下条件**的包：
 ## 数据目录
 
 ```text
-%APPDATA%\dsh-desktop\
+%APPDATA%\dsh-launcher\
 ├── harness\              # DSH 运行数据
 │   ├── sessions\         # 会话文件（按工作区分组）
 │   ├── sessions_trash\   # 会话回收站

@@ -826,7 +826,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "dsh-desktop"
+name = "dsh-launcher"
 version = "1.0.0"
 dependencies = [
  "anyhow",

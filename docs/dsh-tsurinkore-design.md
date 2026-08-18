@@ -1,4 +1,4 @@
-# dsh-tsurinkore 完整设计方案(统一优化插件)
+﻿# dsh-tsurinkore 完整设计方案(统一优化插件)
 
 > 版本:v2 草案 · 布局定稿 + Codex 对标 · 供评审
 

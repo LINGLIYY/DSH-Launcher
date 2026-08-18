@@ -63,7 +63,7 @@ impl Default for LauncherPrefs {
 
 fn base_dir() -> PathBuf {
     let appdata = std::env::var("APPDATA").unwrap_or_else(|_| "C:\\".to_string());
-    PathBuf::from(appdata).join("dsh-desktop")
+    PathBuf::from(appdata).join("dsh-launcher")
 }
 
 pub fn prefs_path() -> PathBuf {

@@ -70,14 +70,14 @@ pub struct PrefsState {
 
 fn default_dsh_home() -> String {
     std::env::var("APPDATA")
-        .map(|a| format!("{}\\dsh-desktop\\harness", a))
-        .unwrap_or_else(|_| "C:\\dsh-desktop\\harness".to_string())
+        .map(|a| format!("{}\\dsh-launcher\\harness", a))
+        .unwrap_or_else(|_| "C:\\dsh-launcher\\harness".to_string())
 }
 
 fn default_logs_dir() -> String {
     std::env::var("APPDATA")
-        .map(|a| format!("{}\\dsh-desktop\\logs", a))
-        .unwrap_or_else(|_| "C:\\dsh-desktop\\logs".to_string())
+        .map(|a| format!("{}\\dsh-launcher\\logs", a))
+        .unwrap_or_else(|_| "C:\\dsh-launcher\\logs".to_string())
 }
 
 fn default_workspace() -> String {
@@ -267,7 +267,7 @@ fn is_within(path: &std::path::Path, root: &std::path::Path) -> bool {
 fn open_dir_allowed(path: &std::path::Path) -> bool {
     let appdata = std::env::var("APPDATA").unwrap_or_else(|_| "C:\\".to_string());
     let mut roots = vec![
-        PathBuf::from(&appdata).join("dsh-desktop"),
+        PathBuf::from(&appdata).join("dsh-launcher"),
         std::env::current_dir().unwrap_or_else(|_| PathBuf::from("C:\\")),
     ];
     // DSH 安装目录（npm 全局目录，由 find_dsh 探测得出）也是可信目录，
@@ -522,7 +522,7 @@ fn set_autostart(enabled: bool) -> Result<(), String> {
                 "add",
                 "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
                 "/v",
-                "DSH Desktop",
+                "DSH Launcher",
                 "/t",
                 "REG_SZ",
                 "/d",
@@ -536,7 +536,7 @@ fn set_autostart(enabled: bool) -> Result<(), String> {
                 "delete",
                 "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
                 "/v",
-                "DSH Desktop",
+                "DSH Launcher",
                 "/f",
             ])
             .status()
@@ -1013,5 +1013,5 @@ pub fn run() {
             clear_launcher_cache,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running DSH Desktop");
+        .expect("error while running DSH Launcher");
 }
