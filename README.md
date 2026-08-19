@@ -10,11 +10,11 @@
 
 ## 界面预览
 
-![DSH Launcher 主界面](https://raw.githubusercontent.com/LINGLIYY/DSH-Launcher/main/docs/images/screenshot-home.jpg)
+![DSH Launcher 主界面](docs/images/screenshot-home.jpg)
 
 *控制台主页：实时日志 + 快速操作 + 端切换*
 
-![插件市场](https://raw.githubusercontent.com/LINGLIYY/DSH-Launcher/main/docs/images/screenshot-market.png)
+![插件市场](docs/images/screenshot-market.png)
 
 *能力中心：插件市场 / 插件管理 / 技能列表 / 多端管理*
 
