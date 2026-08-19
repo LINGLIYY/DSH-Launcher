@@ -10,7 +10,7 @@
 
 ## 界面预览
 
-![DSH Launcher 主界面](https://raw.githubusercontent.com/LINGLIYY/DSH-Launcher/main/docs/images/screenshot-home.png)
+![DSH Launcher 主界面](https://raw.githubusercontent.com/LINGLIYY/DSH-Launcher/main/docs/images/screenshot-home.jpg)
 
 *控制台主页：实时日志 + 快速操作 + 端切换*
 
