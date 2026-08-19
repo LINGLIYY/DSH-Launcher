@@ -512,6 +512,7 @@ fn set_launcher_prefs(
 
 #[tauri::command]
 fn set_autostart(enabled: bool) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let exe = exe.to_string_lossy().into_owned();
     // Run 键的值要求带引号，否则路径含空格（如 Program Files）时开机启动失败。
@@ -529,6 +530,7 @@ fn set_autostart(enabled: bool) -> Result<(), String> {
                 &reg_value,
                 "/f",
             ])
+            .creation_flags(0x0800_0000)
             .status()
     } else {
         std::process::Command::new("reg")
@@ -539,6 +541,7 @@ fn set_autostart(enabled: bool) -> Result<(), String> {
                 "DSH Launcher",
                 "/f",
             ])
+            .creation_flags(0x0800_0000)
             .status()
     };
     status.map(|_| ()).map_err(|e| e.to_string())
@@ -603,8 +606,10 @@ fn copy_text(text: String) -> Result<(), String> {
 
 fn copy_clipboard(text: &str) {
     use std::io::Write;
+    use std::os::windows::process::CommandExt;
     if let Ok(mut child) = std::process::Command::new("clip")
         .stdin(std::process::Stdio::piped())
+        .creation_flags(0x0800_0000)
         .spawn()
     {
         if let Some(mut stdin) = child.stdin.take() {

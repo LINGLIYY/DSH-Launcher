@@ -49,6 +49,7 @@ pub struct WslInfo {
 }
 
 fn wsl_dsh_path(distro: &str) -> String {
+    use std::os::windows::process::CommandExt;
     let out = std::process::Command::new("wsl")
         .args([
             "-d",
@@ -58,6 +59,7 @@ fn wsl_dsh_path(distro: &str) -> String {
             "-lc",
             "command -v dsh 2>/dev/null || command -v dsh.cmd 2>/dev/null",
         ])
+        .creation_flags(0x0800_0000)
         .output();
     match out {
         Ok(o) if o.status.success() => {
@@ -99,7 +101,12 @@ fn decode_wsl(bytes: &[u8]) -> String {
 
 pub fn scan_wsl() -> Vec<WslInfo> {
     let mut out = Vec::new();
-    let Ok(proc) = std::process::Command::new("wsl").args(["-l", "-v"]).output() else {
+    use std::os::windows::process::CommandExt;
+    let Ok(proc) = std::process::Command::new("wsl")
+        .args(["-l", "-v"])
+        .creation_flags(0x0800_0000)
+        .output()
+    else {
         return out;
     };
     if !proc.status.success() {
@@ -148,8 +155,10 @@ pub fn ping(endpoint: &serde_json::Value) -> String {
             if distro.is_empty() {
                 return "error".to_string();
             }
+            use std::os::windows::process::CommandExt;
             let ok = std::process::Command::new("wsl")
                 .args(["-d", distro, "--", "true"])
+                .creation_flags(0x0800_0000)
                 .status()
                 .map(|s| s.success())
                 .unwrap_or(false);

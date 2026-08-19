@@ -23,7 +23,7 @@ pub fn find_dsh() -> Result<String> {
             return Ok(cand.to_string_lossy().into_owned());
         }
     }
-    if let Ok(out) = std::process::Command::new("where").arg("dsh").output() {
+    if let Ok(out) = silent_cmd("where").arg("dsh").output() {
         if out.status.success() {
             let s = String::from_utf8_lossy(&out.stdout);
             if let Some(line) = s.lines().next() {
@@ -32,6 +32,19 @@ pub fn find_dsh() -> Result<String> {
         }
     }
     Err(anyhow!("未找到 dsh 命令，请先执行 npm install -g @deepseek-ai/dsh"))
+}
+
+#[cfg(windows)]
+fn silent_cmd(program: &str) -> std::process::Command {
+    use std::os::windows::process::CommandExt;
+    let mut c = std::process::Command::new(program);
+    c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW：静默执行，不弹终端窗口
+    c
+}
+
+#[cfg(not(windows))]
+fn silent_cmd(program: &str) -> std::process::Command {
+    std::process::Command::new(program)
 }
 
 fn http_ready(url: &str) -> bool {
@@ -375,7 +388,7 @@ fn spawn_reader<R: std::io::Read + Send + 'static>(
 }
 
 fn pid_alive(pid: u32) -> bool {
-    let out = std::process::Command::new("tasklist")
+    let out = silent_cmd("tasklist")
         .args(["/FI", &format!("PID eq {pid}"), "/NH"])
         .output();
     match out {
@@ -385,7 +398,7 @@ fn pid_alive(pid: u32) -> bool {
 }
 
 fn kill_port_listener(port: u16) -> bool {
-    let out = std::process::Command::new("netstat")
+    let out = silent_cmd("netstat")
         .args(["-ano", "-p", "tcp"])
         .output();
     let Ok(out) = out else {
@@ -409,7 +422,7 @@ fn kill_port_listener(port: u16) -> bool {
     }
     let mut killed = false;
     for pid in pids {
-        let r = std::process::Command::new("taskkill")
+        let r = silent_cmd("taskkill")
             .args(["/PID", &pid.to_string(), "/T", "/F"])
             .output();
         if r.map(|o| o.status.success()).unwrap_or(false) {
@@ -433,7 +446,8 @@ pub async fn stop(app: AppHandle, force: bool) -> Result<(), String> {
     if let Some(pid) = pid {
         if let Some(distro) = distro {
             let port = port.unwrap_or(0);
-            let _ = std::process::Command::new("wsl")
+            append_log(&app, "info", &format!("[停止] WSL 端 pkill dsh web（端口 {port}）"));
+            let _ = silent_cmd("wsl")
                 .args([
                     "-d",
                     &distro,
@@ -445,7 +459,8 @@ pub async fn stop(app: AppHandle, force: bool) -> Result<(), String> {
                 .output();
         }
         // 先温和终止并等待，避免强杀打断 DSH 正在写入的会话文件
-        let _ = std::process::Command::new("taskkill")
+        append_log(&app, "info", &format!("[停止] taskkill /PID {pid} /T"));
+        let _ = silent_cmd("taskkill")
             .args(["/PID", &pid.to_string(), "/T"])
             .output();
         let mut alive = true;
@@ -457,7 +472,8 @@ pub async fn stop(app: AppHandle, force: bool) -> Result<(), String> {
             std::thread::sleep(Duration::from_millis(500));
         }
         if alive {
-            let _ = std::process::Command::new("taskkill")
+            append_log(&app, "info", &format!("[停止] 温和终止未生效，强制 taskkill /PID {pid} /T /F"));
+            let _ = silent_cmd("taskkill")
                 .args(["/PID", &pid.to_string(), "/T", "/F"])
                 .output();
         }
