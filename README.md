@@ -10,7 +10,7 @@
 
 ## 界面预览
 
-![DSH Launcher 主界面](docs/images/screenshot-main.png)
+![DSH Launcher 主界面](docs/images/screenshot-home.png)
 
 *控制台主页：实时日志 + 快速操作 + 端切换*
 
@@ -186,7 +186,7 @@ DSH 只加载**同时满足以下条件**的包：
 **Q：启动时提示「未找到 dsh 命令」**
 A：请先执行 `npm install -g @deepseek-ai/dsh` 安装 DSH 本体，然后重启启动器。
 
-**Q：端口 7602 被占用怎么办？**
+**Q：端口 3080 被占用怎么办？**
 A：默认会自动接管已有实例。如需更换端口，在「设置」→「多端管理」中修改当前端端口。
 
 **Q：插件装了但不生效？**
