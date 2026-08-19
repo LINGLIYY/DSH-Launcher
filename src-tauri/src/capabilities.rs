@@ -46,43 +46,66 @@ pub struct WslInfo {
     pub path: String,
     pub version: String,
     pub state: String,
+    pub r#type: String,
+}
+
+fn run_with_timeout(cmd: &mut std::process::Command, secs: u64) -> Option<std::process::Output> {
+    use std::os::windows::process::CommandExt;
+    cmd.creation_flags(0x0800_0000);
+    let mut child = cmd.spawn().ok()?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(secs);
+    loop {
+        if let Ok(Some(_)) = child.try_wait() {
+            break;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+    child.wait_with_output().ok()
 }
 
 fn wsl_dsh_path(distro: &str) -> String {
-    use std::os::windows::process::CommandExt;
-    let out = std::process::Command::new("wsl")
-        .args([
-            "-d",
-            distro,
-            "--",
-            "bash",
-            "-lc",
-            "command -v dsh 2>/dev/null || command -v dsh.cmd 2>/dev/null",
-        ])
-        .creation_flags(0x0800_0000)
-        .output();
-    match out {
-        Ok(o) if o.status.success() => {
-            let p = decode_wsl(&o.stdout)
-                .lines()
-                .next()
-                .unwrap_or("")
-                .trim()
-                .to_string();
-            // 过滤 Windows 通过 WSL PATH 互操作暴露的 npm shim（/mnt/...），
-            // 只接受 WSL 内原生安装的 dsh。
-            if p.starts_with("/mnt/")
-                || p.contains('\\')
-                || p.ends_with(".cmd")
-                || p.ends_with(".exe")
-                || p.ends_with(".ps1")
-            {
-                String::new()
-            } else {
-                p
-            }
+    let out = run_with_timeout(
+        std::process::Command::new("wsl")
+            .args([
+                "-d",
+                distro,
+                "--",
+                "bash",
+                "-lc",
+                "command -v dsh 2>/dev/null || command -v dsh.cmd 2>/dev/null",
+            ]),
+        20,
+    );
+    let out = match out {
+        Some(o) => o,
+        None => return String::new(),
+    };
+    if out.status.success() {
+        let p = decode_wsl(&out.stdout)
+            .lines()
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        // 过滤 Windows 通过 WSL PATH 互操作暴露的 npm shim（/mnt/...），
+        // 只接受 WSL 内原生安装的 dsh。
+        if p.starts_with("/mnt/")
+            || p.contains('\\')
+            || p.ends_with(".cmd")
+            || p.ends_with(".exe")
+            || p.ends_with(".ps1")
+        {
+            String::new()
+        } else {
+            p
         }
-        _ => String::new(),
+    } else {
+        String::new()
     }
 }
 
@@ -101,13 +124,12 @@ fn decode_wsl(bytes: &[u8]) -> String {
 
 pub fn scan_wsl() -> Vec<WslInfo> {
     let mut out = Vec::new();
-    use std::os::windows::process::CommandExt;
-    let Ok(proc) = std::process::Command::new("wsl")
-        .args(["-l", "-v"])
-        .creation_flags(0x0800_0000)
-        .output()
-    else {
-        return out;
+    let proc = match run_with_timeout(
+        std::process::Command::new("wsl").args(["-l", "-v"]),
+        15,
+    ) {
+        Some(p) => p,
+        None => return out,
     };
     if !proc.status.success() {
         return out;
@@ -130,6 +152,14 @@ pub fn scan_wsl() -> Vec<WslInfo> {
         if distro.is_empty() || distro.eq_ignore_ascii_case("NAME") {
             continue;
         }
+        // 发行版处于 Stopped 时先拉起，避免探测命令挂起/超时导致“扫不到”
+        if state.eq_ignore_ascii_case("Stopped") {
+            let _ = run_with_timeout(
+                std::process::Command::new("wsl").args(["-d", &distro, "--", "true"]),
+                25,
+            );
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        }
         let path = wsl_dsh_path(&distro);
         out.push(WslInfo {
             name: distro.clone(),
@@ -137,9 +167,14 @@ pub fn scan_wsl() -> Vec<WslInfo> {
             path,
             version,
             state,
+            r#type: "wsl".to_string(),
         });
     }
     out
+}
+
+pub fn scan_terminals() -> Vec<WslInfo> {
+    scan_wsl()
 }
 
 pub fn ping(endpoint: &serde_json::Value) -> String {
@@ -792,6 +827,7 @@ pub fn install_market_plugin(app: &tauri::AppHandle, target: &str) -> Result<Str
                 added.join(", ")
             ));
         }
+        let _ = crate::crashguard::snapshot_bundles();
         return Ok(format!(
             "{msg}\n已注册 bundle 层：{}（已通过启动自检），重启 DSH 后生效",
             added.join(", ")
@@ -841,6 +877,7 @@ pub fn register_plugin(id: &str) -> Result<String, String> {
         let _ = crate::prefs::atomic_write(&pkg, &before);
         return Err(format!("插件 {id} 会导致 DSH 启动失败，已回滚注册"));
     }
+    let _ = crate::crashguard::snapshot_bundles();
     Ok(format!("插件 {id} 已注册（bundle 层，已通过启动自检），重启 DSH 后生效"))
 }
 

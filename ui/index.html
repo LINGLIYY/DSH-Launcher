@@ -239,7 +239,8 @@
 
       <!-- ===== 数据与维护 ===== -->
       <div class="settings-section" data-sec="maintenance">
-        <h3>快速跳转（当前端）</h3>
+        <h3>数据与备份</h3>
+        <div class="si-desc" style="margin-bottom:10px">浏览与管理启动器/DSH 的数据目录，导出/导入配置，备份配置以便回滚。此区域只查看与保存，不删除任何原始数据。</div>
         <div class="action-grid">
           <button data-open="sessions">打开 DSH 会话目录</button>
           <button data-open="plugins">打开插件安装目录</button>
@@ -264,18 +265,34 @@
         </div>
         <div class="si-desc" style="margin-top:6px">导入会覆盖勾选范围内的同名配置项（未勾选的项保持当前值不变）。</div>
 
-        <h3 style="margin-top:20px">防崩溃与配置备份</h3>
-        <div class="si-desc" style="margin-bottom:10px">修改插件或配置可能导致 DSH 启动失败。启动器会在每次修改配置前自动备份，连续 2 次启动失败时自动恢复最近备份。也可手动操作：</div>
+        <h3 style="margin-top:20px">配置备份</h3>
+        <div class="si-desc" style="margin-bottom:10px">修改插件或配置可能导致 DSH 启动失败。启动器会在每次修改配置前自动备份，连续 2 次启动失败时自动恢复最近备份。</div>
         <div class="setting-item">
           <button class="btn-small" id="btnBackupNow">立即备份当前配置</button>
-          <button class="btn-small" id="btnSafeMode" style="margin-left:6px">安全模式启动（空配置）</button>
-          <button class="btn-small" id="btnExitSafeMode" style="margin-left:6px;display:none">退出安全模式（恢复原配置）</button>
+          <div class="si-desc">把 settings.yaml 与 cordis.patch.yml 复制到备份目录（保留最近 5 份），供出问题时回滚。</div>
         </div>
         <div class="setting-item">
           <div class="si-label"><span>配置备份历史（最近 5 份）</span></div>
           <div id="backupList" style="margin-top:6px;font-size:12px;max-height:160px;overflow-y:auto">
             <div class="si-desc">加载中...</div>
           </div>
+        </div>
+
+        <h3 style="margin-top:20px">修复与恢复</h3>
+        <div class="si-desc" style="margin-bottom:10px">当 DSH 启动失败或插件配置把它搞坏时，从这里恢复：安全模式用空配置排查，回退 bundle 快照还原可用插件列表，或重装/卸载 DSH 本体。</div>
+        <div class="setting-item">
+          <button class="btn-small" id="btnSafeMode">安全模式启动（空配置）</button>
+          <button class="btn-small" id="btnExitSafeMode" style="margin-left:6px;display:none">退出安全模式（恢复原配置）</button>
+          <div class="si-desc">临时把当前配置移开、用默认配置启动，用于排查配置/插件问题；退出后恢复原配置。</div>
+        </div>
+        <div class="setting-item">
+          <button class="btn-normal" id="btnRestoreBundleSnapshot">回退 bundle 列表（上次可用快照）</button>
+          <div class="si-desc">把 profile 的 dsh.profile.bundles 与依赖回退到最近一次启动自检通过的快照，修复第三方插件导致的启动失败。</div>
+        </div>
+        <div class="setting-item">
+          <button class="btn-normal" id="btnReinstallDsh">重装 DSH（卸载后装最新版）</button>
+          <button class="btn-danger" id="btnUninstallDsh">卸载 DSH</button>
+          <div class="si-desc">遇到无法解决的问题时重装 DSH 本体；数据目录 %APPDATA%\dsh-launcher 不会被删除，重装后可恢复会话与配置。</div>
         </div>
 
         <div class="reset-zone">

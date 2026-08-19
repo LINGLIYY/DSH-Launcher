@@ -172,7 +172,7 @@ pub async fn start(
         if ep_path.is_empty() {
             return Err("WSL 端未检测到 dsh 路径，请先自动扫描或手动填写".to_string());
         }
-        ep_path
+        ep_path.clone()
     } else {
         tauri::async_runtime::spawn_blocking(find_dsh)
             .await

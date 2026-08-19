@@ -324,6 +324,11 @@ fn scan_wsl() -> Vec<capabilities::WslInfo> {
 }
 
 #[tauri::command]
+fn scan_terminals() -> Vec<capabilities::WslInfo> {
+    capabilities::scan_terminals()
+}
+
+#[tauri::command]
 fn ping_endpoint(endpoint: serde_json::Value) -> String {
     capabilities::ping(&endpoint)
 }
@@ -434,6 +439,11 @@ fn reset_dsh_config() -> Result<(), String> {
 #[tauri::command]
 fn list_config_backups() -> Vec<crashguard::ConfigBackup> {
     crashguard::list_backups()
+}
+
+#[tauri::command]
+fn restore_bundle_snapshot() -> Result<bool, String> {
+    crashguard::restore_bundle_snapshot()
 }
 
 #[tauri::command]
@@ -683,6 +693,35 @@ async fn install_or_update_dsh() -> Result<String, String> {
             msg = stdout.trim().to_string();
         }
         Err(if msg.is_empty() { "npm 安装失败".to_string() } else { msg })
+    }
+}
+
+#[tauri::command]
+async fn uninstall_dsh() -> Result<String, String> {
+    let out = tauri::async_runtime::spawn_blocking(|| {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("cmd")
+            .args(["/C", "npm", "uninstall", "-g", "@deepseek-ai/dsh"])
+            .creation_flags(0x0800_0000)
+            .output()
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    if out.status.success() {
+        let mut msg = stdout.trim().to_string();
+        if msg.is_empty() {
+            msg = stderr.trim().to_string();
+        }
+        Ok(if msg.is_empty() { "DSH 已卸载".to_string() } else { msg })
+    } else {
+        let mut msg = stderr.trim().to_string();
+        if msg.is_empty() {
+            msg = stdout.trim().to_string();
+        }
+        Err(if msg.is_empty() { "npm 卸载失败".to_string() } else { msg })
     }
 }
 
@@ -986,11 +1025,13 @@ pub fn run() {
             read_launcher_log,
             dsh_version,
             install_or_update_dsh,
+            uninstall_dsh,
             set_always_on_top,
             list_plugins,
             list_skills,
             list_mcp,
             scan_wsl,
+            scan_terminals,
             ping_endpoint,
             import_plugin,
             install_market_plugin,
@@ -1006,6 +1047,7 @@ pub fn run() {
             set_cordis_patch,
             reset_dsh_config,
             list_config_backups,
+            restore_bundle_snapshot,
             restore_config_backup,
             backup_config_now,
             start_harness_safe,

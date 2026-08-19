@@ -44,6 +44,40 @@ fn patch_path() -> PathBuf {
         .join("cordis.patch.yml")
 }
 
+fn bundle_snapshot_path() -> PathBuf {
+    backup_dir().join("bundles-snapshot.json")
+}
+
+/// 记录“最近一次启动自检通过”的 profile package.json（bundles + deps 快照），
+/// 用于第三方 bundle 把 DSH 搞崩时一键回退。
+pub fn snapshot_bundles() -> Result<(), String> {
+    let src = dsh_home()
+        .join("profiles")
+        .join("web")
+        .join("package.json");
+    let text = std::fs::read_to_string(&src).map_err(|e| e.to_string())?;
+    crate::prefs::atomic_write(&bundle_snapshot_path(), &text)
+}
+
+/// 用快照覆盖回 profile 的 package.json；快照不存在或与当前一致时返回 false。
+pub fn restore_bundle_snapshot() -> Result<bool, String> {
+    let snap = bundle_snapshot_path();
+    if !snap.exists() {
+        return Ok(false);
+    }
+    let text = std::fs::read_to_string(&snap).map_err(|e| e.to_string())?;
+    let dst = dsh_home()
+        .join("profiles")
+        .join("web")
+        .join("package.json");
+    let cur = std::fs::read_to_string(&dst).unwrap_or_default();
+    if cur == text {
+        return Ok(false);
+    }
+    crate::prefs::atomic_write(&dst, &text)?;
+    Ok(true)
+}
+
 fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

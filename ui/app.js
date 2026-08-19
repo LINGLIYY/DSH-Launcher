@@ -154,7 +154,7 @@ function renderEndpointList(){
 
 $("btnScanEndpoints")?.addEventListener("click",async()=>{
   appendLog("[多端] 正在扫描 WSL 子系统中的 DSH...","log-start");
-  const found=await invoke("scan_wsl");
+  const found=await invoke("scan_terminals");
   let added=0;
   found.forEach(f=>{
     if(!f.path){
@@ -1889,6 +1889,46 @@ updateEndpointUI();
 loadLauncherPrefs();
 loadCapabilityData();
 loadBackupList();
+
+$("btnRestoreBundleSnapshot")?.addEventListener("click",()=>{
+  showConfirm("回退 bundle 列表","将把 profile 的 bundles 与依赖回退到最近一次启动自检通过的快照，重启 DSH 后生效。",async()=>{
+    try{
+      const ok=await invoke("restore_bundle_snapshot");
+      if(ok){appendLog("[维护] 已回退到上次可用 bundle 快照，重启 DSH 后生效","log-ready")}
+      else{appendLog("[维护] 没有可回退的 bundle 快照（与当前一致）","log-stop")}
+    }catch(e){appendLog("[维护] 回退失败："+e,"log-error")}
+  });
+});
+$("btnUninstallDsh")?.addEventListener("click",()=>{
+  showConfirm("卸载 DSH","将静默停止 DSH 并执行 npm 全局卸载 @deepseek-ai/dsh。数据目录 %APPDATA%\\dsh-launcher 会保留。",async()=>{
+    const btn=$("btnUninstallDsh"); if(btn){btn.disabled=true;btn.textContent="卸载中..."}
+    appendLog("[DSH] 正在静默停止并卸载 DSH 本体...","log-start");
+    try{
+      await invoke("stop_harness",{force:true,endpoint_id:currentEndpoint().id});
+      const r=await invoke("uninstall_dsh");
+      appendLog(`[DSH] ${r}`,"log-ready");
+      await loadDshVersion();
+      appendLog("[DSH] 卸载完成；如需恢复请点「重装 DSH」","log-stop");
+    }catch(e){appendLog("[DSH] 卸载失败："+e,"log-error")}
+    if(btn){btn.disabled=false;btn.textContent="卸载 DSH"}
+  });
+});
+$("btnReinstallDsh")?.addEventListener("click",()=>{
+  showConfirm("重装 DSH","将静默停止 DSH、卸载后安装最新版 @deepseek-ai/dsh。数据目录保留，重启 DSH 后生效。",async()=>{
+    const btn=$("btnReinstallDsh"); if(btn){btn.disabled=true;btn.textContent="重装中..."}
+    appendLog("[DSH] 正在重装 DSH 本体（停止→卸载→安装最新）...","log-start");
+    try{
+      await invoke("stop_harness",{force:true,endpoint_id:currentEndpoint().id});
+      const u=await invoke("uninstall_dsh");
+      appendLog(`[DSH] 卸载：${u}`,"log-stop");
+      const r=await invoke("install_or_update_dsh");
+      appendLog(`[DSH] 安装：${r}`,"log-ready");
+      await loadDshVersion();
+      appendLog("[DSH] 重装完成，请重启 DSH 使新版本生效","log-stop");
+    }catch(e){appendLog("[DSH] 重装失败："+e,"log-error")}
+    if(btn){btn.disabled=false;btn.textContent="重装 DSH（卸载后装最新版）"}
+  });
+});
 loadDshVersion();
 updateStatus(false,false);
 appendLog("DSH Launcher 启动器已就绪","log-ready");
