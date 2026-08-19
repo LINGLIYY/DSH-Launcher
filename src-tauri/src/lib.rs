@@ -643,7 +643,28 @@ fn read_launcher_log() -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn dsh_version() -> Result<serde_json::Value, String> {
+async fn dsh_version(distro: Option<String>) -> Result<serde_json::Value, String> {
+    if let Some(d) = distro {
+        if !d.is_empty() {
+            let d_cmd = d.clone();
+            let out = tauri::async_runtime::spawn_blocking(move || {
+                use std::os::windows::process::CommandExt;
+                std::process::Command::new("wsl")
+                    .args(["-d", &d_cmd, "--", "bash", "-lc", "command -v dsh >/dev/null 2>&1 && dsh --version 2>&1 || echo 'WSL 内未安装 dsh'"])
+                    .creation_flags(0x0800_0000)
+                    .output()
+            })
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
+            let version = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            return Ok(serde_json::json!({
+                "path": format!("wsl:{d}"),
+                "version": if version.is_empty() { err } else { version },
+            }));
+        }
+    }
     let dsh = tauri::async_runtime::spawn_blocking(harness::find_dsh)
         .await
         .map_err(|e| e.to_string())?
@@ -668,13 +689,21 @@ async fn dsh_version() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-async fn install_or_update_dsh() -> Result<String, String> {
-    let out = tauri::async_runtime::spawn_blocking(|| {
+async fn install_or_update_dsh(distro: Option<String>) -> Result<String, String> {
+    let target = distro.unwrap_or_default();
+    let out = tauri::async_runtime::spawn_blocking(move || {
         use std::os::windows::process::CommandExt;
-        std::process::Command::new("cmd")
-            .args(["/C", "npm", "install", "-g", "@deepseek-ai/dsh@latest"])
-            .creation_flags(0x0800_0000)
-            .output()
+        if !target.is_empty() {
+            std::process::Command::new("wsl")
+                .args(["-d", &target, "--", "bash", "-lc", "npm install -g @deepseek-ai/dsh@latest 2>&1"])
+                .creation_flags(0x0800_0000)
+                .output()
+        } else {
+            std::process::Command::new("cmd")
+                .args(["/C", "npm", "install", "-g", "@deepseek-ai/dsh@latest"])
+                .creation_flags(0x0800_0000)
+                .output()
+        }
     })
     .await
     .map_err(|e| e.to_string())?
@@ -697,13 +726,21 @@ async fn install_or_update_dsh() -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn uninstall_dsh() -> Result<String, String> {
-    let out = tauri::async_runtime::spawn_blocking(|| {
+async fn uninstall_dsh(distro: Option<String>) -> Result<String, String> {
+    let target = distro.unwrap_or_default();
+    let out = tauri::async_runtime::spawn_blocking(move || {
         use std::os::windows::process::CommandExt;
-        std::process::Command::new("cmd")
-            .args(["/C", "npm", "uninstall", "-g", "@deepseek-ai/dsh"])
-            .creation_flags(0x0800_0000)
-            .output()
+        if !target.is_empty() {
+            std::process::Command::new("wsl")
+                .args(["-d", &target, "--", "bash", "-lc", "npm uninstall -g @deepseek-ai/dsh 2>&1"])
+                .creation_flags(0x0800_0000)
+                .output()
+        } else {
+            std::process::Command::new("cmd")
+                .args(["/C", "npm", "uninstall", "-g", "@deepseek-ai/dsh"])
+                .creation_flags(0x0800_0000)
+                .output()
+        }
     })
     .await
     .map_err(|e| e.to_string())?

@@ -88,9 +88,20 @@ function setActiveEndpoint(id){
 
 function typeLabel(t){return t==="windows"?"Windows":t==="wsl"?"WSL":"SSH 远程（待开发）"}
 function typeTagClass(t){return t==="windows"?"tag-builtin":t==="wsl"?"tag-wsl":"tag-ssh"}
+function currentDshTarget(){return ($("dshInstallTarget")?.value)||""}
+function updateDshTargetSelect(){
+  const sel=$("dshInstallTarget");if(!sel)return;
+  const cur=sel.value;
+  const opts=[["","Windows"]];
+  (endpoints||[]).forEach(e=>{if(e.type==="wsl"&&e.distro){opts.push([e.distro,e.name+"（"+e.distro+"）"])}});
+  sel.innerHTML="";
+  opts.forEach(function(o){const v=o[0],l=o[1];const el=document.createElement("option");el.value=v;el.textContent=l;sel.appendChild(el)});
+  if(opts.some(function(o){return o[0]===cur}))sel.value=cur;
+}
 
 function updateEndpointUI(){
   const ep=currentEndpoint();
+  updateDshTargetSelect();
   $("epName").textContent=ep.name;
   $("epDot").style.background=ep.status==="running"?"var(--success-green)":ep.status==="error"?"var(--error-red)":"#999";
   // 下拉列表
@@ -559,13 +570,19 @@ $("exportLog").onclick=async()=>{
 };
 async function loadDshVersion(){
   try{
-    const v=await invoke("dsh_version");
+    const target=currentDshTarget();
+    const v=await invoke("dsh_version",{distro:target});
     $("dshVersionText").value=v.version||"未知";
     if(v.path){
       $("dshVersionText").title=v.path;
-      const dir=v.path.replace(/[\\/][^\\/]*$/,"");
-      if($("dshInstallText"))$("dshInstallText").value=dir;
-      if($("installPath"))$("installPath").textContent="安装目录："+dir;
+      if(target){
+        if($("dshInstallText"))$("dshInstallText").value="WSL："+target;
+        if($("installPath"))$("installPath").textContent="安装位置：WSL "+target;
+      }else{
+        const dir=v.path.replace(/[\\/][^\\/]*$/,"");
+        if($("dshInstallText"))$("dshInstallText").value=dir;
+        if($("installPath"))$("installPath").textContent="安装目录："+dir;
+      }
     }
   }catch(e){$("dshVersionText").value="检测失败"}
 }
@@ -586,11 +603,13 @@ async function checkDshUpdate(){
 }
 $("btnCheckDshUpdate")?.addEventListener("click",checkDshUpdate);
 $("btnInstallDsh")?.addEventListener("click",()=>{
-  showConfirm("安装 / 更新 DSH","将通过 npm 全局安装最新版 @deepseek-ai/dsh，需要联网，可能需要几分钟。当前会话数据不受影响。",async()=>{
+  const target=currentDshTarget();
+  const where=target?"WSL 发行版 "+target:"Windows 全局";
+  showConfirm("安装 / 更新 DSH","将安装最新版 @deepseek-ai/dsh 到"+where+"，需要联网，可能需要几分钟。",async()=>{
     const btn=$("btnInstallDsh");if(btn){btn.disabled=true;btn.textContent="安装中..."}
-    appendLog("[DSH] 正在安装 / 更新 DSH 本体...","log-start");
+    appendLog(`[DSH] 正在安装 / 更新 DSH 本体（${where}）...`,"log-start");
     try{
-      const r=await invoke("install_or_update_dsh");
+      const r=await invoke("install_or_update_dsh",{distro:target});
       appendLog(`[DSH] ${r}`,"log-ready");
       await loadDshVersion();
       appendLog("[DSH] 更新完成，请重启 DSH 使新版本生效","log-stop");
@@ -1900,12 +1919,14 @@ $("btnRestoreBundleSnapshot")?.addEventListener("click",()=>{
   });
 });
 $("btnUninstallDsh")?.addEventListener("click",()=>{
-  showConfirm("卸载 DSH","将静默停止 DSH 并执行 npm 全局卸载 @deepseek-ai/dsh。数据目录 %APPDATA%\\dsh-launcher 会保留。",async()=>{
+  const target=currentDshTarget();
+  const where=target?"WSL 发行版 "+target:"Windows 全局";
+  showConfirm("卸载 DSH","将静默停止 DSH 并卸载"+where+"的 @deepseek-ai/dsh。数据目录会保留。",async()=>{
     const btn=$("btnUninstallDsh"); if(btn){btn.disabled=true;btn.textContent="卸载中..."}
-    appendLog("[DSH] 正在静默停止并卸载 DSH 本体...","log-start");
+    appendLog(`[DSH] 正在静默停止并卸载 DSH 本体（${where}）...`,"log-start");
     try{
       await invoke("stop_harness",{force:true,endpoint_id:currentEndpoint().id});
-      const r=await invoke("uninstall_dsh");
+      const r=await invoke("uninstall_dsh",{distro:target});
       appendLog(`[DSH] ${r}`,"log-ready");
       await loadDshVersion();
       appendLog("[DSH] 卸载完成；如需恢复请点「重装 DSH」","log-stop");
@@ -1914,14 +1935,16 @@ $("btnUninstallDsh")?.addEventListener("click",()=>{
   });
 });
 $("btnReinstallDsh")?.addEventListener("click",()=>{
-  showConfirm("重装 DSH","将静默停止 DSH、卸载后安装最新版 @deepseek-ai/dsh。数据目录保留，重启 DSH 后生效。",async()=>{
+  const target=currentDshTarget();
+  const where=target?"WSL 发行版 "+target:"Windows 全局";
+  showConfirm("重装 DSH","将静默停止 DSH、卸载后安装最新版 @deepseek-ai/dsh 到"+where+"。数据目录保留。",async()=>{
     const btn=$("btnReinstallDsh"); if(btn){btn.disabled=true;btn.textContent="重装中..."}
-    appendLog("[DSH] 正在重装 DSH 本体（停止→卸载→安装最新）...","log-start");
+    appendLog(`[DSH] 正在重装 DSH 本体（${where}：停止→卸载→安装最新）...`,"log-start");
     try{
       await invoke("stop_harness",{force:true,endpoint_id:currentEndpoint().id});
-      const u=await invoke("uninstall_dsh");
+      const u=await invoke("uninstall_dsh",{distro:target});
       appendLog(`[DSH] 卸载：${u}`,"log-stop");
-      const r=await invoke("install_or_update_dsh");
+      const r=await invoke("install_or_update_dsh",{distro:target});
       appendLog(`[DSH] 安装：${r}`,"log-ready");
       await loadDshVersion();
       appendLog("[DSH] 重装完成，请重启 DSH 使新版本生效","log-stop");
