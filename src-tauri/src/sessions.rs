@@ -36,19 +36,11 @@ pub struct SessionHit {
 }
 
 fn sessions_root() -> PathBuf {
-    let base = std::env::var("APPDATA").unwrap_or_else(|_| "C:\\".to_string());
-    PathBuf::from(base)
-        .join("dsh-launcher")
-        .join("harness")
-        .join("sessions")
+    PathBuf::from(crate::default_dsh_home()).join("sessions")
 }
 
 fn trash_root() -> PathBuf {
-    let base = std::env::var("APPDATA").unwrap_or_else(|_| "C:\\".to_string());
-    PathBuf::from(base)
-        .join("dsh-launcher")
-        .join("harness")
-        .join("sessions_trash")
+    PathBuf::from(crate::default_dsh_home()).join("sessions_trash")
 }
 
 fn data_file(session_dir: &Path) -> Option<PathBuf> {

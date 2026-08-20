@@ -45,7 +45,7 @@ impl HarnessInner {
             pid: None,
             child: None,
             host: "127.0.0.1".to_string(),
-            port: 7602,
+            port: 3080,
             workspace: default_workspace(),
             dsh_path: String::new(),
             dsh_home: default_dsh_home(),
@@ -68,10 +68,17 @@ pub struct PrefsState {
     pub inner: Mutex<prefs::LauncherPrefs>,
 }
 
-fn default_dsh_home() -> String {
-    std::env::var("APPDATA")
-        .map(|a| format!("{}\\dsh-launcher\\harness", a))
-        .unwrap_or_else(|_| "C:\\dsh-launcher\\harness".to_string())
+/// 与官方 dsh CLI 保持一致：优先 DSH_HOME 环境变量，否则 USERPROFILE\.dsh
+/// （即 Windows 全局世界，与 `dsh web` / npx 共用同一套会话与配置）。
+pub fn default_dsh_home() -> String {
+    if let Ok(h) = std::env::var("DSH_HOME") {
+        if !h.trim().is_empty() {
+            return h;
+        }
+    }
+    std::env::var("USERPROFILE")
+        .map(|p| format!("{}\\.dsh", p))
+        .unwrap_or_else(|_| "C:\\Users\\Public\\.dsh".to_string())
 }
 
 fn default_logs_dir() -> String {
@@ -108,7 +115,7 @@ async fn start_harness(
     endpoint: Option<harness::EndpointSpec>,
 ) -> Result<serde_json::Value, String> {
     let ws = workspace.unwrap_or_else(default_workspace);
-    let port = port.unwrap_or(7602);
+    let port = port.unwrap_or(3080);
     harness::start(app, ws, port, endpoint).await?;
     Ok(serde_json::json!({ "status": "starting" }))
 }
@@ -319,13 +326,39 @@ fn list_mcp() -> Vec<capabilities::McpInfo> {
 }
 
 #[tauri::command]
-fn scan_wsl() -> Vec<capabilities::WslInfo> {
-    capabilities::scan_wsl()
+async fn wsl_distros() -> Vec<String> {
+    tauri::async_runtime::spawn_blocking(capabilities::wsl_distros)
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]
-fn scan_terminals() -> Vec<capabilities::WslInfo> {
-    capabilities::scan_terminals()
+async fn scan_wsl(app: tauri::AppHandle) -> Vec<capabilities::WslInfo> {
+    // WSL 冷启动 + 探测可能耗时数十秒，必须放到阻塞线程，避免拖慢 UI/IPC
+    let found = tauri::async_runtime::spawn_blocking(capabilities::scan_wsl)
+        .await
+        .unwrap_or_default();
+    harness::append_log(
+        &app,
+        "info",
+        &format!("[多端] WSL 扫描完成：共 {} 条（其中含 dsh 路径 {} 条）", found.len(), found.iter().filter(|f| !f.path.is_empty()).count()),
+    );
+    found
+}
+
+#[tauri::command]
+async fn scan_terminals(app: tauri::AppHandle) -> Vec<capabilities::WslInfo> {
+    let found = tauri::async_runtime::spawn_blocking(capabilities::scan_terminals)
+        .await
+        .unwrap_or_default();
+    let win = found.iter().filter(|f| f.r#type == "windows" && !f.path.is_empty()).count();
+    let wsl = found.iter().filter(|f| f.r#type == "wsl" && !f.path.is_empty()).count();
+    harness::append_log(
+        &app,
+        "info",
+        &format!("[多端] 自动扫描完成：Windows {} 个、WSL {} 个 dsh（共 {} 条）", win, wsl, found.len()),
+    );
+    found
 }
 
 #[tauri::command]
@@ -469,7 +502,7 @@ async fn start_harness_safe(
         harness::append_log(&app, "info", "[安全模式] 无现有配置，直接使用默认配置启动");
     }
     let ws = default_workspace();
-    let port = port.unwrap_or(7602);
+    let port = port.unwrap_or(3080);
     harness::start(app, ws, port, None).await?;
     Ok(serde_json::json!({ "status": "starting-safe", "safe_mode": true }))
 }
@@ -688,14 +721,130 @@ async fn dsh_version(distro: Option<String>) -> Result<serde_json::Value, String
     }))
 }
 
+#[derive(serde::Deserialize)]
+pub struct InstallTarget {
+    pub kind: String,   // "dir" = Windows 自定义目录；"wsl" = WSL 发行版
+    pub distro: String, // kind = "wsl" 时的发行版名
+    pub path: String,   // 安装目录（Windows 绝对路径 / WSL 路径如 ~/dsh-test）
+}
+
+/// 把 DSH 安装到指定目录（Windows 自定义目录或 WSL 发行版内的目录），
+/// 不触碰全局安装 —— 用于"不想装全局 / 需要再装一个做测试"的场景。
+/// 路径要求全英文（非 ASCII 与注入字符直接拒绝）。
+#[tauri::command]
+async fn install_dsh_to(target: InstallTarget) -> Result<serde_json::Value, String> {
+    let path = target.path.trim().to_string();
+    if path.is_empty() {
+        return Err("安装目录不能为空".to_string());
+    }
+    if !path.is_ascii() {
+        return Err("安装目录仅允许英文（字母 / 数字 / _ - . / \\ : ~ 与空格），请勿包含中文等其他字符".to_string());
+    }
+    if path.chars().any(|c| matches!(c, '&' | '|' | '<' | '>' | '"' | '\'' | '`' | '$' | '(' | ')')) {
+        return Err("安装目录包含非法字符（& | < > \" ' ` $ ( )），请重新输入".to_string());
+    }
+    let kind = target.kind.trim().to_string();
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        use std::os::windows::process::CommandExt;
+        if kind == "wsl" {
+            let distro = target.distro.trim().to_string();
+            if distro.is_empty() {
+                return Err("请选择 WSL 发行版".to_string());
+            }
+            // 脚本经 base64 传输，规避 wsl.exe 参数破坏；补 node/npm PATH
+            let script = format!(
+                "export PATH=\"$HOME/node/bin:/usr/local/bin:/usr/bin:$PATH\"; npm install -g --prefix \"{}\" @deepseek-ai/dsh@latest 2>&1 && echo __DSH_PREFIX__=$(readlink -f \"{}\")",
+                path, path
+            );
+            let cmd_line = format!(
+                "echo {} | base64 -d | bash",
+                crate::capabilities::b64_encode(script.as_bytes())
+            );
+            let out = std::process::Command::new("wsl")
+                .args(["-d", &distro, "--", "bash", "-lc", &cmd_line])
+                .creation_flags(0x0800_0000)
+                .output()
+                .map_err(|e| e.to_string())?;
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            if !out.status.success() {
+                let mut msg = stderr.trim().to_string();
+                if msg.is_empty() { msg = stdout.trim().to_string(); }
+                return Err(if msg.is_empty() { "npm 安装失败".to_string() } else { msg });
+            }
+            // 从输出中提取展开后的前缀
+            let mut prefix = path.clone();
+            for line in stdout.lines() {
+                if let Some(p) = line.strip_prefix("__DSH_PREFIX__=") {
+                    prefix = p.trim().to_string();
+                    break;
+                }
+            }
+            let bin = format!("{}/bin/dsh", prefix.trim_end_matches('/'));
+            Ok(serde_json::json!({
+                "kind": "wsl",
+                "distro": distro,
+                "prefix": prefix,
+                "bin": bin,
+                "msg": stdout.lines().filter(|l| !l.starts_with("__DSH_PREFIX__")).collect::<Vec<_>>().join("\n")
+            }))
+        } else {
+            // Windows 自定义目录：npm install -g --prefix <dir>
+            let _ = std::fs::create_dir_all(&path);
+            let out = std::process::Command::new("cmd")
+                .args(["/C", "npm", "install", "-g", "--prefix", &path, "@deepseek-ai/dsh@latest"])
+                .creation_flags(0x0800_0000)
+                .output()
+                .map_err(|e| e.to_string())?;
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            if !out.status.success() {
+                let mut msg = stderr.trim().to_string();
+                if msg.is_empty() { msg = stdout.trim().to_string(); }
+                return Err(if msg.is_empty() { "npm 安装失败".to_string() } else { msg });
+            }
+            let bin = std::path::Path::new(&path).join("dsh.cmd");
+            if !bin.exists() {
+                return Err(format!("安装完成但未找到预期入口 {}，请检查 npm 输出", bin.display()));
+            }
+            Ok(serde_json::json!({
+                "kind": "dir",
+                "distro": "",
+                "prefix": path,
+                "bin": bin.to_string_lossy().to_string(),
+                "msg": stdout.trim().to_string()
+            }))
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut v = out?;
+    // 统一附带一句话成功摘要
+    if let Some(m) = v.get_mut("msg") {
+        if m.as_str().map(|s| s.trim().is_empty()).unwrap_or(true) {
+            *m = serde_json::Value::String("DSH 安装完成".to_string());
+        }
+    }
+    Ok(v)
+}
+
 #[tauri::command]
 async fn install_or_update_dsh(distro: Option<String>) -> Result<String, String> {
     let target = distro.unwrap_or_default();
     let out = tauri::async_runtime::spawn_blocking(move || {
         use std::os::windows::process::CommandExt;
         if !target.is_empty() {
+            // 关键：WSL 登录 PATH 会透传 Windows 互操作路径，裸 `npm` 会解析到
+            // Windows 的 npm（/mnt/c/...），导致安装/卸载作用到 Windows 全局！
+            // 必须前置 WSL 自装 node 的 PATH，并经 base64 传输命令（wsl.exe 参数坑）。
+            let script = "export PATH=\"$HOME/node/bin:/usr/local/bin:/usr/bin:$PATH\"; npm install -g @deepseek-ai/dsh@latest 2>&1";
+            let cmd = format!(
+                "echo {} | base64 -d | bash",
+                crate::capabilities::b64_encode(script.as_bytes())
+            );
             std::process::Command::new("wsl")
-                .args(["-d", &target, "--", "bash", "-lc", "npm install -g @deepseek-ai/dsh@latest 2>&1"])
+                .args(["-d", &target, "--", "bash", "-lc", &cmd])
                 .creation_flags(0x0800_0000)
                 .output()
         } else {
@@ -731,8 +880,14 @@ async fn uninstall_dsh(distro: Option<String>) -> Result<String, String> {
     let out = tauri::async_runtime::spawn_blocking(move || {
         use std::os::windows::process::CommandExt;
         if !target.is_empty() {
+            // 同 install_or_update_dsh：PATH 隔离 + base64，防止误卸 Windows 全局
+            let script = "export PATH=\"$HOME/node/bin:/usr/local/bin:/usr/bin:$PATH\"; npm uninstall -g @deepseek-ai/dsh 2>&1";
+            let cmd = format!(
+                "echo {} | base64 -d | bash",
+                crate::capabilities::b64_encode(script.as_bytes())
+            );
             std::process::Command::new("wsl")
-                .args(["-d", &target, "--", "bash", "-lc", "npm uninstall -g @deepseek-ai/dsh 2>&1"])
+                .args(["-d", &target, "--", "bash", "-lc", &cmd])
                 .creation_flags(0x0800_0000)
                 .output()
         } else {
@@ -980,7 +1135,7 @@ pub fn run() {
                                     .get("port")
                                     .and_then(|p| p.as_u64())
                                     .map(|p| p as u16)
-                                    .unwrap_or(7602);
+                                    .unwrap_or(3080);
                                 let ws = e
                                     .get("workspace")
                                     .and_then(|w| w.as_str())
@@ -1062,6 +1217,7 @@ pub fn run() {
             read_launcher_log,
             dsh_version,
             install_or_update_dsh,
+            install_dsh_to,
             uninstall_dsh,
             set_always_on_top,
             list_plugins,
@@ -1069,6 +1225,7 @@ pub fn run() {
             list_mcp,
             scan_wsl,
             scan_terminals,
+            wsl_distros,
             ping_endpoint,
             import_plugin,
             install_market_plugin,

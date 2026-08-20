@@ -51,7 +51,12 @@ pub struct WslInfo {
 
 fn run_with_timeout(cmd: &mut std::process::Command, secs: u64) -> Option<std::process::Output> {
     use std::os::windows::process::CommandExt;
+    use std::process::Stdio;
     cmd.creation_flags(0x0800_0000);
+    // 关键：必须显式接管道。wsl.exe / where.exe 在没有重定向时会输出到继承的
+    // 控制台；dsh-launcher 是 GUI 进程（无控制台），输出会直接丢失导致读不到任何内容。
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
     let mut child = cmd.spawn().ok()?;
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(secs);
     loop {
@@ -68,50 +73,282 @@ fn run_with_timeout(cmd: &mut std::process::Command, secs: u64) -> Option<std::p
     child.wait_with_output().ok()
 }
 
-fn wsl_dsh_path(distro: &str) -> String {
-    let out = run_with_timeout(
-        std::process::Command::new("wsl")
-            .args([
-                "-d",
-                distro,
-                "--",
-                "bash",
-                "-lc",
-                "command -v dsh 2>/dev/null || command -v dsh.cmd 2>/dev/null",
-            ]),
-        20,
-    );
-    let out = match out {
-        Some(o) => o,
-        None => return String::new(),
-    };
-    if out.status.success() {
-        let p = decode_wsl(&out.stdout)
-            .lines()
-            .next()
-            .unwrap_or("")
-            .trim()
-            .to_string();
-        // 过滤 Windows 通过 WSL PATH 互操作暴露的 npm shim（/mnt/...），
-        // 只接受 WSL 内原生安装的 dsh。
-        if p.starts_with("/mnt/")
-            || p.contains('\\')
-            || p.ends_with(".cmd")
-            || p.ends_with(".exe")
-            || p.ends_with(".ps1")
-        {
-            String::new()
-        } else {
-            p
-        }
-    } else {
-        String::new()
+/// 简易 base64 编码（无第三方依赖）。
+/// 用途：wsl.exe 传递含引号/特殊字符的命令字符串会被其参数解析破坏，
+/// 因此把要在 WSL 内执行的命令 base64 编码后经 `echo <b64> | base64 -d | bash` 执行。
+pub(crate) fn b64_encode(data: &[u8]) -> String {
+    const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = chunk.get(1).map(|&b| b as u32).unwrap_or(0);
+        let b2 = chunk.get(2).map(|&b| b as u32).unwrap_or(0);
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        out.push(T[(n >> 18) as usize & 63] as char);
+        out.push(T[(n >> 12) as usize & 63] as char);
+        out.push(if chunk.len() > 1 { T[(n >> 6) as usize & 63] as char } else { '=' });
+        out.push(if chunk.len() > 2 { T[n as usize & 63] as char } else { '=' });
     }
+    out
 }
 
+/// 枚举 WSL 内**所有** dsh：PATH 中全部命中（which -a）+ 常见非 PATH 安装位置。
+/// /mnt/... 是 Windows 通过互操作暴露的 npm shim，一律过滤。
+/// 命令经 base64 传输，规避 wsl.exe 对引号/特殊字符的参数破坏；
+/// 冷启动（Stopped → Running，尤其带 systemd）可能很慢：超时给足并失败重试一次。
+fn wsl_dsh_paths(distro: &str) -> Vec<String> {
+    let probe = "which -a dsh 2>/dev/null; for c in ~/node/bin/dsh ~/.local/bin/dsh /usr/local/bin/dsh ~/n/bin/dsh ~/.nvm/versions/node/*/bin/dsh /opt/node*/bin/dsh; do [ -x \"$c\" ] && echo \"$c\"; done";
+    let cmd = format!("echo {} | base64 -d | bash", b64_encode(probe.as_bytes()));
+    for attempt in 0..2 {
+        let out = run_with_timeout(
+            std::process::Command::new("wsl")
+                .args(["-d", distro, "--", "bash", "-lc", &cmd]),
+            if attempt == 0 { 35 } else { 45 },
+        );
+        let Some(out) = out else {
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            continue;
+        };
+        // 注意：探测脚本的退出码通常为 1（最后一条候选路径 [ -x ] 不命中导致），
+        // 但 stdout 内容才是关键——只要 stdout/stderr 有输出就解析，不能按退出码丢弃。
+        let raw = if !out.stdout.is_empty() {
+            out.stdout
+        } else if !out.stderr.is_empty() {
+            out.stderr
+        } else {
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            continue;
+        };
+        let mut seen = std::collections::HashSet::new();
+        let mut result = Vec::new();
+        for line in decode_wsl(&raw).lines() {
+            let p = line.trim().to_string();
+            if p.is_empty() {
+                continue;
+            }
+            // 只接受 WSL 内原生安装的 dsh，过滤 Windows npm shim
+            if p.starts_with("/mnt/")
+                || p.contains('\\')
+                || p.ends_with(".cmd")
+                || p.ends_with(".exe")
+                || p.ends_with(".ps1")
+            {
+                continue;
+            }
+            if seen.insert(p.clone()) {
+                result.push(p);
+            }
+        }
+        if !result.is_empty() || attempt == 1 {
+            return result;
+        }
+        std::thread::sleep(std::time::Duration::from_secs(3));
+    }
+    Vec::new()
+}
+
+/// 枚举 Windows 侧**所有** dsh：PATH 中的全部命中 + 全局 npm + npx 缓存（含 .disabled 历史缓存）。
+/// 同一安装的多个 shim（dsh / dsh.cmd）按文件名去重，优先保留 .cmd。
+pub fn scan_windows() -> Vec<WslInfo> {
+    use std::path::PathBuf;
+    let mut cands: Vec<(String, String)> = Vec::new();
+    let add = |name: &str, path: &str, cands: &mut Vec<(String, String)>| {        let norm = path.trim().trim_matches('"').to_string();
+        if !norm.is_empty() {
+            cands.push((name.to_string(), norm));
+        }
+    };
+    // 1) PATH 中所有 dsh（where 返回全部命中）
+    if let Some(o) = run_with_timeout(std::process::Command::new("where").arg("dsh"), 10) {
+        if o.status.success() {
+            for line in String::from_utf8_lossy(&o.stdout).lines() {
+                let p = line.trim();
+                if !p.is_empty() {
+                    add("Windows · PATH 全局", p, &mut cands);
+                }
+            }
+        }
+    }
+    // 2) 全局 npm 目录（即使不在 PATH 也补一次）
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        let p = PathBuf::from(&appdata).join("npm").join("dsh.cmd");
+        if p.exists() {
+            add("Windows · npm 全局", &p.to_string_lossy(), &mut cands);
+        }
+    }
+    // 3) npx 缓存（含 .disabled 历史缓存）
+    if let Ok(local) = std::env::var("LOCALAPPDATA") {
+        let npx_root = PathBuf::from(&local).join("npm-cache").join("_npx");
+        if let Ok(entries) = std::fs::read_dir(&npx_root) {
+            for e in entries.flatten() {
+                let bin = e.path().join("node_modules").join(".bin").join("dsh.cmd");
+                if bin.exists() {
+                    add("Windows · npx 缓存", &bin.to_string_lossy(), &mut cands);
+                }
+            }
+        }
+    }
+    let mut out: Vec<WslInfo> = Vec::new();
+    let mut seen_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut seen_stems: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for (name, path) in cands {
+        if !seen_paths.insert(path.clone()) {
+            continue;
+        }
+        let stem = std::path::Path::new(&path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.clone());
+        let is_cmd = path.to_ascii_lowercase().ends_with(".cmd");
+        if let Some(&idx) = seen_stems.get(&stem) {
+            // 同 stem：已有 .cmd 则跳过；当前是 .cmd 则替换旧的裸 shim
+            let existing = &out[idx].path;
+            let existing_cmd = existing.to_ascii_lowercase().ends_with(".cmd");
+            if existing_cmd || !is_cmd {
+                continue;
+            }
+            out[idx].path = path.clone();
+            out[idx].name = name.clone();
+        } else {
+            seen_stems.insert(stem, out.len());
+            out.push(WslInfo {
+                name,
+                distro: "Windows".to_string(),
+                path,
+                version: String::new(),
+                state: "detected".to_string(),
+                r#type: "windows".to_string(),
+            });
+        }
+    }
+    out
+}
+
+pub fn scan_wsl() -> Vec<WslInfo> {
+    let mut out = Vec::new();
+
+    // 1) 枚举发行版：优先 `wsl -l -v`（带状态），stdout 为空回退 stderr；
+    //    解析不出任何发行版时回退 `wsl -l -q`（每行一个名字，无表头）。
+    let mut distros: Vec<(String, String, String)> = Vec::new(); // (distro, state, version)
+    let proc = match run_with_timeout(
+        std::process::Command::new("wsl").args(["-l", "-v"]),
+        20,
+    ) {
+        Some(p) => p,
+        None => return out,
+    };
+    if proc.status.success() {
+        let raw = if !proc.stdout.is_empty() { proc.stdout } else { proc.stderr };
+        let text = decode_wsl(&raw);
+        for line in text.lines().skip(1) {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.is_empty() {
+                continue;
+            }
+            let (distro, state, version) = if parts.first() == Some(&"*") {
+                (
+                    parts.get(1).unwrap_or(&"").to_string(),
+                    parts.get(2).unwrap_or(&"").to_string(),
+                    parts.get(3).unwrap_or(&"").to_string(),
+                )
+            } else {
+                (
+                    parts.first().unwrap_or(&"").to_string(),
+                    parts.get(1).unwrap_or(&"").to_string(),
+                    parts.get(2).unwrap_or(&"").to_string(),
+                )
+            };
+            if distro.is_empty() || distro.eq_ignore_ascii_case("NAME") {
+                continue;
+            }
+            distros.push((distro, state, version));
+        }
+    }
+    if distros.is_empty() {
+        if let Some(q) = run_with_timeout(std::process::Command::new("wsl").args(["-l", "-q"]), 20) {
+            if q.status.success() {
+                let raw = if !q.stdout.is_empty() { q.stdout } else { q.stderr };
+                for line in decode_wsl(&raw).lines() {
+                    let d = line.trim().to_string();
+                    if !d.is_empty() && !d.eq_ignore_ascii_case("NAME") {
+                        distros.push((d, String::new(), String::new()));
+                    }
+                }
+            }
+        }
+    }
+
+    for (distro, state, version) in distros {
+        // 发行版处于 Stopped 时先拉起，并等它就绪（systemd 发行版冷启动可能较慢）
+        if state.eq_ignore_ascii_case("Stopped") {
+            let _ = run_with_timeout(
+                std::process::Command::new("wsl").args(["-d", &distro, "--", "true"]),
+                40,
+            );
+            let _ = run_with_timeout(
+                std::process::Command::new("wsl").args(["-d", &distro, "--", "echo", "ready"]),
+                30,
+            );
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        }
+        let paths = wsl_dsh_paths(&distro);
+        if paths.is_empty() {
+            out.push(WslInfo {
+                name: distro.clone(),
+                distro,
+                path: String::new(),
+                version,
+                state,
+                r#type: "wsl".to_string(),
+            });
+        } else {
+            for p in paths {
+                out.push(WslInfo {
+                    name: format!("{} · {}", distro, p),
+                    distro: distro.clone(),
+                    path: p,
+                    version: version.clone(),
+                    state: state.clone(),
+                    r#type: "wsl".to_string(),
+                });
+            }
+        }
+    }
+    out
+}
+
+/// 枚举当前机器上所有 WSL 发行版名（`wsl -l -q`，每行一个名字，无表头）。
+/// 用于"手动添加 WSL 端 / 安装新 DSH"时的发行版下拉选择，支持多子系统环境。
+pub fn wsl_distros() -> Vec<String> {
+    let Some(out) = run_with_timeout(std::process::Command::new("wsl").args(["-l", "-q"]), 20) else {
+        return Vec::new();
+    };
+    if !out.status.success() {
+        return Vec::new();
+    }
+    let raw = if !out.stdout.is_empty() { out.stdout } else { out.stderr };
+    let mut result = Vec::new();
+    for line in decode_wsl(&raw).lines() {
+        let d = line.trim().to_string();
+        if d.is_empty() || d.eq_ignore_ascii_case("NAME") || d.contains(' ') {
+            continue;
+        }
+        result.push(d);
+    }
+    result
+}
+
+/// 多端检测：Windows 与 WSL 中**所有**存在的 dsh，逐个枚举。
+pub fn scan_terminals() -> Vec<WslInfo> {
+    let mut out = scan_windows();
+    out.extend(scan_wsl());
+    out
+}
+
+/// wsl.exe 在管道下输出 UTF-16LE；个别环境可能输出 UTF-8 或混入 \0。
+/// 双保险：UTF-16 判定阈值放宽到 1/4，解码后统一剥离 \0，保证后续 split_whitespace 可靠。
 fn decode_wsl(bytes: &[u8]) -> String {
     let nul_count = bytes.iter().filter(|&&b| b == 0).count();
-    if nul_count > bytes.len() / 3 {
+    let text = if !bytes.is_empty() && nul_count > bytes.len() / 4 {
         let units: Vec<u16> = bytes
             .chunks_exact(2)
             .map(|c| u16::from_le_bytes([c[0], c[1]]))
@@ -119,62 +356,12 @@ fn decode_wsl(bytes: &[u8]) -> String {
         String::from_utf16_lossy(&units)
     } else {
         String::from_utf8_lossy(bytes).into_owned()
-    }
-}
-
-pub fn scan_wsl() -> Vec<WslInfo> {
-    let mut out = Vec::new();
-    let proc = match run_with_timeout(
-        std::process::Command::new("wsl").args(["-l", "-v"]),
-        15,
-    ) {
-        Some(p) => p,
-        None => return out,
     };
-    if !proc.status.success() {
-        return out;
+    if text.contains('\0') {
+        text.replace('\0', "")
+    } else {
+        text
     }
-    let text = decode_wsl(&proc.stdout);
-    for line in text.lines().skip(1) {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        let (distro, state, version) = if parts.first() == Some(&"*") {
-            let d = parts.get(1).unwrap_or(&"").to_string();
-            let s = parts.get(2).unwrap_or(&"").to_string();
-            let v = parts.get(3).unwrap_or(&"").to_string();
-            (d, s, v)
-        } else {
-            (
-                parts.first().unwrap_or(&"").to_string(),
-                parts.get(1).unwrap_or(&"").to_string(),
-                parts.get(2).unwrap_or(&"").to_string(),
-            )
-        };
-        if distro.is_empty() || distro.eq_ignore_ascii_case("NAME") {
-            continue;
-        }
-        // 发行版处于 Stopped 时先拉起，避免探测命令挂起/超时导致“扫不到”
-        if state.eq_ignore_ascii_case("Stopped") {
-            let _ = run_with_timeout(
-                std::process::Command::new("wsl").args(["-d", &distro, "--", "true"]),
-                25,
-            );
-            std::thread::sleep(std::time::Duration::from_secs(1));
-        }
-        let path = wsl_dsh_path(&distro);
-        out.push(WslInfo {
-            name: distro.clone(),
-            distro,
-            path,
-            version,
-            state,
-            r#type: "wsl".to_string(),
-        });
-    }
-    out
-}
-
-pub fn scan_terminals() -> Vec<WslInfo> {
-    scan_wsl()
 }
 
 pub fn ping(endpoint: &serde_json::Value) -> String {
@@ -204,7 +391,7 @@ pub fn ping(endpoint: &serde_json::Value) -> String {
             let port = endpoint
                 .get("port")
                 .and_then(|x| x.as_u64())
-                .unwrap_or(7602) as u16;
+                .unwrap_or(3080) as u16;
             if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
                 "running".to_string()
             } else {
@@ -275,10 +462,7 @@ pub fn import_plugin(src: &str) -> Result<String, String> {
 }
 
 fn dsh_home() -> PathBuf {
-    let base = std::env::var("APPDATA").unwrap_or_else(|_| "C:\\".to_string());
-    PathBuf::from(base)
-        .join("dsh-launcher")
-        .join("harness")
+    PathBuf::from(crate::default_dsh_home())
 }
 
 fn profile_dir() -> PathBuf {

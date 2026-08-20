@@ -4,7 +4,7 @@
 
 A lightweight Windows desktop launcher for [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness).
 
-> Current version: **v1.0 (2026-08-17)**
+> Current version: **v1.0.2 (2026-08-20)**
 
 It does **not** reimplement DSH and does **not** bundle Node/Electron. It wraps the globally installed `dsh` CLI into a friendlier desktop entry: async start/stop, system tray, live logs, session management, plugin marketplace, skill listing, multi-endpoint management, and crash protection.
 
@@ -45,7 +45,7 @@ For a detailed feature walkthrough in Chinese, see [项目介绍.md](项目介�
 
 - **Windows 10 / 11** (64-bit)
 - **Microsoft Edge WebView2 Runtime** (built into Win11; may need manual install on Win10)
-- **Node.js 18+** (for installing DSH)
+- **Node.js 20+** (for installing DSH)
 - **DSH itself** (global install):
 
 ```powershell
@@ -121,7 +121,7 @@ The launcher syncs this automatically on install/register/open. Packages without
 
 ### Plugin crash safety
 
-Installing/enabling a plugin triggers a boot probe (launches DSH on a random port to verify it doesn't crash). On failure, changes roll back automatically.
+Installing/registering a plugin triggers a boot probe (launches DSH on a random port to verify it doesn't crash). On failure, changes roll back automatically. Enabling/disabling built-in plugins is validated via `dsh --profile web --dump-config` and rolled back on failure.
 
 ---
 
@@ -165,21 +165,28 @@ Find backup history, manual backup, and restore in Settings → Data & Maintenan
 
 ## Data Directories
 
+The launcher shares the **same DSH data** as the official `dsh web` (DSH_HOME, defaults to `USERPROFILE\.dsh`, overridable via the `DSH_HOME` env var):
+
 ```text
-%APPDATA%\dsh-launcher\
-├── harness\              # DSH runtime data
-│   ├── sessions\         # session files (grouped by workspace)
-│   ├── sessions_trash\   # session trash
-│   ├── profiles\web\     # profile config, plugins, node_modules
-│   ├── settings.yaml     # DSH main config
-│   ├── config-backups\   # auto config backups
-│   └── config-crash-backup\  # safe mode stashed config
-├── logs\
-│   └── launcher.log      # launcher log (auto-rotates at 5MB)
-└── launcher-prefs.json   # launcher preferences
+USERPROFILE\.dsh\               # DSH runtime data (shared with dsh web)
+├── sessions\                   # session files (grouped by workspace)
+├── sessions_trash\             # session trash (created by the launcher)
+├── profiles\web\               # profile config, plugins, node_modules
+├── settings.yaml               # DSH main config
+├── config-backups\             # auto config backups (maintained by the launcher)
+└── config-crash-backup\        # safe mode stashed config
 ```
 
-Uninstalling or deleting the launcher directory does **not** affect these data.
+Launcher's own data:
+
+```text
+%APPDATA%\dsh-launcher\
+├── logs\
+│   └── launcher.log            # launcher log (auto-rotates at 5MB)
+└── launcher-prefs.json         # launcher preferences
+```
+
+Uninstalling or deleting the launcher directory does **not** affect the DSH data above.
 
 ---
 
@@ -188,17 +195,17 @@ Uninstalling or deleting the launcher directory does **not** affect these data.
 **Q: "dsh command not found" on startup?**
 A: Install DSH first with `npm install -g @deepseek-ai/dsh`, then restart the launcher.
 
-**Q: Port 7602 is in use?**
-A: By default the launcher takes over the existing instance. To change ports, go to Settings → Multi-endpoint and edit the current endpoint.
+**Q: Port 3080 is in use?**
+A: By default the launcher takes over the existing instance. To change ports, remove the current endpoint in the "Endpoints" tab, then re-add/re-scan it and specify the port.
 
 **Q: Plugin installed but not working?**
-A: Check if the plugin declares `dsh.bundle.patch`. Packages without it are plain dependencies and won't be loaded by DSH. Check the activation status in plugin details.
+A: Check if the plugin declares `dsh.bundle.patch`. Packages without it are plain dependencies and won't be loaded by DSH. Check the enable/disable state in the plugin list.
 
 **Q: DSH keeps failing to start?**
 A: Try Settings → Crash Protection → "Safe Mode". If safe mode works, it's a config/plugin issue; restore backups one by one to isolate.
 
 **Q: How do I use WSL endpoints?**
-A: Settings → Multi-endpoint → "Auto-scan WSL". Detects `dsh` in each distro. WSL endpoints support start/stop and connectivity checks; session/plugin data still reads from the local Windows DSH_HOME.
+A: "Endpoints" tab → "Auto-scan". Detects **all** installed `dsh` binaries in Windows and each WSL distro (including ones not on PATH, e.g. `~/node/bin/dsh`). WSL endpoints support start/stop and connectivity checks and use WSL's own DSH_HOME (default `~/.dsh`), isolated from the Windows side.
 
 ---
 

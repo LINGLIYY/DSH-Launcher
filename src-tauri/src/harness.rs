@@ -241,19 +241,22 @@ pub async fn start(
         // WSL2 的 localhost 转发支持回环绑定，Windows 侧仍可经 127.0.0.1 访问；
         // 不绑 0.0.0.0，避免把服务暴露到 WSL 虚拟网卡/局域网。
         let bind_host = "127.0.0.1";
-        let script = if workspace == "~" {
-            format!("{} web --host {} --port {}", sh_quote(&dsh_path), bind_host, port)
-        } else {
-            format!(
-                "cd {} && {} web --host {} --port {}",
-                sh_quote(&workspace),
-                sh_quote(&dsh_path),
-                bind_host,
-                port
-            )
-        };
+        // 脚本经 base64 传输（wsl.exe 会破坏含引号/特殊字符的参数），
+        // 因此脚本内部可以放心使用引号与 $HOME；并补充常见 node 位置到 PATH
+        // （自装 node 如 ~/node/bin 不在登录 PATH，dsh 的 shebang 依赖 node）。
+        let script = format!(
+            "export PATH=\"$HOME/node/bin:/usr/local/bin:/usr/bin:$PATH\"; cd {} && {} web --host {} --port {}",
+            sh_quote(if workspace == "~" { "~" } else { &workspace }),
+            sh_quote(&dsh_path),
+            bind_host,
+            port
+        );
+        let cmd_line = format!(
+            "echo {} | base64 -d | bash",
+            crate::capabilities::b64_encode(script.as_bytes())
+        );
         let mut cmd = std::process::Command::new("wsl");
-        cmd.args(["-d", &d, "--", "bash", "-lc", &script]);
+        cmd.args(["-d", &d, "--", "bash", "-lc", &cmd_line]);
         if !dsh_home.is_empty() { cmd.env("DSH_HOME", &dsh_home); }
         cmd.env("NO_COLOR", "1");
         cmd.creation_flags(CREATE_NO_WINDOW);

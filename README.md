@@ -4,7 +4,7 @@
 
 面向 [DeepSeek Harness（DSH）](https://github.com/deepseek-ai/deepseek-harness) 的 Windows 轻量桌面启动器。
 
-> 当前版本：**v1.0（2026-08-17）**
+> 当前版本：**v1.0.2（2026-08-20）**
 
 它**不重新实现 DSH**，也不打包 Node/Electron，而是把官方全局安装的 `dsh` 命令行工具包装成更顺手的桌面入口：异步启动/停止、系统托盘、实时日志、会话管理、插件市场、技能列表、多端管理与防崩溃保护。
 
@@ -43,7 +43,7 @@
 
 - **Windows 10 / 11**（64 位）
 - **Microsoft Edge WebView2 Runtime**（Win11 自带，Win10 可能需手动安装）
-- **Node.js 18+**（用于安装 DSH 本体）
+- **Node.js 20+**（用于安装 DSH 本体）
 - **DSH 本体**（全局安装）：
 
 ```powershell
@@ -119,7 +119,7 @@ DSH 只加载**同时满足以下条件**的包：
 
 ### 插件防崩溃
 
-安装/启用插件时会自动做启动自检（随机端口拉起 DSH 验证不崩溃），失败则自动回滚，避免「装了插件把 DSH 玩死」。
+安装/注册插件时会自动做启动自检（随机端口拉起 DSH 验证不崩溃），失败则自动回滚；启用/禁用内置插件时用 `dsh --profile web --dump-config` 校验配置，失败自动回滚——避免「装了插件把 DSH 玩死」。
 
 ---
 
@@ -127,15 +127,15 @@ DSH 只加载**同时满足以下条件**的包：
 
 ### 启动器偏好
 
-在「设置」→「通用偏好」中配置：
+在「设置」（右上角 ⚙）→「通用」中配置：
 - 启动行为：启动时自动拉起 DSH、就绪后自动开浏览器
 - 关闭行为：最小化到托盘 / 直接退出
 - 窗口置顶、开机自启、界面缩放（80%-130%）
-- 日志保留天数、看板娘参数
+- 日志保留天数；看板娘参数在「设置」→「外观」
 
 ### DSH 运行配置
 
-在「设置」→「运行与用量」中编辑：
+在「设置」→「运行配置」中编辑：
 - `settings.yaml`：DSH 主配置
 - `cordis.patch.yml`：插件注册层（insert/disable）
 
@@ -163,21 +163,28 @@ DSH 只加载**同时满足以下条件**的包：
 
 ## 数据目录
 
+启动器与官方 `dsh web` **共用同一套 DSH 数据**（DSH_HOME，默认 `USERPROFILE\.dsh`，可用环境变量 `DSH_HOME` 覆盖）：
+
 ```text
-%APPDATA%\dsh-launcher\
-├── harness\              # DSH 运行数据
-│   ├── sessions\         # 会话文件（按工作区分组）
-│   ├── sessions_trash\   # 会话回收站
-│   ├── profiles\web\     # profile 配置、插件、node_modules
-│   ├── settings.yaml     # DSH 主配置
-│   ├── config-backups\   # 配置自动备份
-│   └── config-crash-backup\  # 安全模式临时存放的原配置
-├── logs\
-│   └── launcher.log      # 启动器日志（超过 5MB 自动轮转）
-└── launcher-prefs.json   # 启动器偏好
+USERPROFILE\.dsh\               # DSH 运行数据（与官方 dsh web 共用）
+├── sessions\                   # 会话文件（按工作区分组）
+├── sessions_trash\             # 会话回收站（由启动器创建）
+├── profiles\web\               # profile 配置、插件、node_modules
+├── settings.yaml               # DSH 主配置
+├── config-backups\             # 配置自动备份（由启动器维护）
+└── config-crash-backup\        # 安全模式临时存放的原配置
 ```
 
-卸载或删除启动器目录**不会**影响以上数据。
+启动器自身的数据：
+
+```text
+%APPDATA%\dsh-launcher\
+├── logs\
+│   └── launcher.log            # 启动器日志（超过 5MB 自动轮转）
+└── launcher-prefs.json         # 启动器偏好
+```
+
+卸载或删除启动器目录**不会**影响以上 DSH 数据。
 
 ---
 
@@ -187,16 +194,16 @@ DSH 只加载**同时满足以下条件**的包：
 A：请先执行 `npm install -g @deepseek-ai/dsh` 安装 DSH 本体，然后重启启动器。
 
 **Q：端口 3080 被占用怎么办？**
-A：默认会自动接管已有实例。如需更换端口，在「设置」→「多端管理」中修改当前端端口。
+A：默认会自动接管已有实例。如需更换端口，在「多端管理」Tab 中删除当前端后重新添加/扫描，并在添加时指定端口。
 
 **Q：插件装了但不生效？**
-A：检查插件是否声明了 `dsh.bundle.patch`。未声明的包只是普通依赖，DSH 不会加载。可在插件详情中查看生效状态。
+A：检查插件是否声明了 `dsh.bundle.patch`。未声明的包只是普通依赖，DSH 不会加载。可在插件列表中查看启用/禁用状态。
 
 **Q：DSH 一直启动失败？**
 A：尝试「设置」→「防崩溃」→「安全模式启动」。如果安全模式能启动，说明是配置或插件问题，可逐次恢复备份定位原因。
 
 **Q：WSL 端怎么用？**
-A：「设置」→「多端管理」→「自动扫描 WSL」，会检测各发行版中的 `dsh` 路径。WSL 端支持启停与连通检测，会话/插件数据仍读取本机 Windows 的 DSH_HOME。
+A：「多端管理」Tab →「自动扫描」，会检测 Windows 与各 WSL 发行版中**所有**已安装的 `dsh`（含不在 PATH 里的，如 `~/node/bin/dsh`）。WSL 端支持启停与连通检测，并使用 WSL 内自己的 DSH_HOME（默认 `~/.dsh`），与 Windows 侧数据互相隔离。
 
 ---
 

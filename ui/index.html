@@ -11,311 +11,517 @@
 <!-- 看板娘 -->
 <img src="kanban-background.png" class="kanban-overlay" id="kanbanImg" alt="">
 
-<!-- 设置遮罩 -->
-<div class="settings-mask" id="settingsMask"></div>
+<!-- ==================== 主窗口 ==================== -->
+<div class="app">
 
-<!-- 设置抽屉（可拖拽拉伸） -->
-<div class="settings-drawer" id="settingsDrawer">
-  <div class="drag-handle" id="dragHandle" title="拖拽调整宽度"></div>
-  <div class="settings-header">
-    <h2>设置</h2>
-    <span class="drawer-width-label" id="drawerWidthLabel">440px</span>
-    <button class="settings-close" id="settingsClose">&times;</button>
-  </div>
-  <div class="settings-body">
-    <div class="settings-nav" id="settingsNav">
-      <div class="nav-item active" data-sec="general">通用偏好</div>
-      <div class="nav-item" data-sec="endpoints">多端管理</div>
-      <div class="nav-item" data-sec="runtime">运行与用量</div>
-      <div class="nav-item" data-sec="maintenance">数据与维护</div>
-      <div class="nav-item" data-sec="about">环境信息</div>
+  <!-- 顶栏：品牌 / 端切换 / 状态 -->
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-logo">DSH</span>
+      <span class="brand-name">Launcher</span>
     </div>
-    <div class="settings-content">
-
-      <!-- ===== 通用偏好 ===== -->
-      <div class="settings-section active" data-sec="general">
-        <h3>外观与看板娘</h3>
-        <div class="setting-item">
-          <div class="si-label"><span>启用看板娘背景</span><div class="switch on" id="swKanban"></div></div>
-          <div class="si-desc">启动器界面装饰组件，不属于 DSH 插件体系。关闭后不再渲染图片。</div>
+    <div class="header-center">
+      <div class="endpoint-switcher">
+        <div class="endpoint-btn" id="endpointBtn" title="切换当前端">
+          <span class="ep-dot" id="epDot"></span>
+          <span class="ep-name" id="epName">本地 Windows</span>
+          <span class="ep-caret">▾</span>
         </div>
-        <div class="setting-item">
-          <div class="si-label"><span>显示尺寸</span><span class="range-val" id="kanbanSizeVal">340px</span></div>
-          <input type="range" id="kanbanSize" min="120" max="480" value="340">
-          <div class="si-desc">调整角色画面宽度，尺寸过大易遮挡操作区。</div>
-        </div>
-        <div class="setting-item">
-          <div class="si-label"><span>透明度</span><span class="range-val" id="kanbanOpacityVal">0.38</span></div>
-          <input type="range" id="kanbanOpacity" min="10" max="60" value="38">
-          <div class="si-desc">数值越高画面越清晰，过高会干扰文字阅读。</div>
-        </div>
-        <div class="setting-item">
-          <div class="si-label"><span>停靠位置</span></div>
-          <select id="kanbanPosition">
-            <option value="rb">右下角</option>
-            <option value="lb">左下角</option>
-          </select>
-          <div class="si-desc">选择看板娘在窗口中的停靠边角。</div>
-          <div style="display:flex;gap:6px;margin-top:6px">
-            <button class="btn-small" id="btnEditKanbanPos">编辑位置</button>
-            <button class="btn-small" id="btnLockKanbanPos">确定位置</button>
-          </div>
-          <div class="si-desc">点击“编辑位置”后可自由拖拽看板娘，拖到合适位置后点“确定位置”锁定。</div>
-        </div>
-        <div class="setting-item">
-          <div class="si-label"><span>智能避让</span><div class="switch" id="swKanbanAvoid"></div></div>
-          <div class="si-desc">开启后看板娘自动向下偏移，避开日志区域底部。</div>
-        </div>
-        <div class="setting-item">
-          <div class="si-label"><span>自定义图片</span></div>
-          <div style="display:flex;gap:6px;margin-top:4px">
-            <button class="btn-small" id="btnKanbanPick">选择图片</button>
-            <button class="btn-small" id="btnKanbanReset">恢复默认</button>
-          </div>
-          <div class="si-desc">支持 PNG/JPG，建议使用透明背景素材。</div>
-        </div>
-
-        <h3 style="margin-top:20px">窗口与托盘</h3>
-        <div class="setting-item">
-          <div class="si-label"><span>关闭窗口行为</span></div>
-          <select id="closeBehavior">
-            <option value="tray">最小化到托盘</option>
-            <option value="quit">直接退出程序</option>
-          </select>
-        </div>
-        <div class="setting-item">
-          <div class="si-label"><span>单实例锁定</span><div class="switch on" id="swSingleInstance"></div></div>
-          <div class="si-desc">重复打开仅唤起现有窗口，不会启动多个实例。</div>
-        </div>
-        <div class="setting-item">
-          <div class="si-label"><span>记住窗口位置与大小</span><div class="switch on" id="swRememberWin"></div></div>
-        </div>
-        <div class="setting-item">
-          <div class="si-label"><span>窗口置顶</span><div class="switch" id="swAlwaysOnTop"></div></div>
-          <div class="si-desc">开启后启动器窗口始终显示在最前，方便随时查看日志与状态。</div>
-        </div>
-        <div class="setting-item">
-          <div class="si-label"><span>开机自启动</span><div class="switch" id="swAutoStart"></div></div>
-        </div>
-
-        <h3 style="margin-top:20px">启动行为</h3>
-        <div class="setting-item">
-          <div class="si-label"><span>启动器打开时</span></div>
-          <select id="launchBehavior">
-            <option value="manual">手动启动 DSH</option>
-            <option value="auto">自动拉起当前端 DSH</option>
-          </select>
-        </div>
-        <div class="setting-item">
-          <div class="si-label"><span>DSH 启动后自动打开浏览器</span><div class="switch" id="swAutoBrowser"></div></div>
-          <div class="si-desc">开启后，DSH 就绪时自动用默认浏览器打开其网页；关闭则只启动服务，不自动打开。</div>
-        </div>
-        <div class="setting-item">
-          <div class="si-label"><span>端口占用策略</span></div>
-          <select id="portPolicy">
-            <option value="takeover">自动接管已有实例</option>
-            <option value="prompt">占用时报错</option>
-          </select>
-        </div>
-
-        <h3 style="margin-top:20px">日志与缓存</h3>
-        <div class="setting-item">
-          <div class="si-label"><span>保存启动器日志</span><div class="switch on" id="swSaveLog"></div></div>
-        </div>
-        <div class="setting-item">
-          <div class="si-label"><span>日志保留天数</span></div>
-          <select id="logRetention">
-            <option value="7">7 天</option>
-            <option value="15" selected>15 天</option>
-            <option value="30">30 天</option>
-          </select>
-        </div>
-        <div class="setting-item">
-          <button class="btn-small" id="btnClearCache">清空启动器缓存</button>
-          <button class="btn-small" id="btnOpenLogDir" style="margin-left:6px">打开日志目录</button>
-        </div>
-
-        <h3 style="margin-top:20px">界面缩放</h3>
-        <div class="setting-item">
-          <div class="si-label"><span>缩放比例</span><span class="range-val" id="uiZoomVal">100%</span></div>
-          <input type="range" id="uiZoom" min="80" max="130" step="5" value="100">
-          <div class="si-desc">调整整体界面缩放；默认 100% 为原始尺寸。锁定后滑块不可调，防止误改。</div>
-        </div>
-        <div class="setting-item">
-          <div class="si-label"><span>锁定缩放</span><div class="switch" id="swLockZoom"></div></div>
-        </div>
-        <div class="setting-item">
-          <button class="btn-small" id="btnResetZoom">恢复默认（100%）</button>
-        </div>
+        <div class="endpoint-dropdown" id="endpointDropdown"></div>
       </div>
-
-      <!-- ===== 多端管理 ===== -->
-      <div class="settings-section" data-sec="endpoints">
-        <div class="settings-hint">多端管理：统一管理本机 Windows、WSL 各发行版中的 DSH 实例。SSH 远程端暂待开发（DSH 目前不能安全地直接暴露到公网）。WSL 端支持启停与连通检测；会话、插件、技能等数据读取仅对接本机 Windows 的 DSH_HOME。</div>
-        <div style="display:flex;gap:6px;margin-bottom:12px">
-          <button class="btn-small" id="btnScanEndpoints">自动扫描 WSL</button>
-          <button class="btn-small" id="btnRefreshEndpoints">刷新状态</button>
-        </div>
-        <div id="endpointList"></div>
-
-        <div class="endpoint-add-zone">
-          <h4>手动添加端</h4>
-          <div class="form-row">
-            <label>端名称</label>
-            <input type="text" id="newEpName" placeholder="如：WSL Ubuntu、远程开发机">
-          </div>
-          <div class="form-row">
-            <label>类型</label>
-            <select id="newEpType">
-              <option value="windows">Windows 本地</option>
-              <option value="wsl">WSL 子系统</option>
-              <option value="ssh" disabled>SSH 远程（待开发）</option>
-            </select>
-          </div>
-          <div class="form-row">
-            <label>DSH 路径</label>
-            <input type="text" id="newEpPath" placeholder="如：/usr/local/bin/dsh 或 %APPDATA%\npm\dsh.cmd">
-          </div>
-          <div class="form-row">
-            <label>端口</label>
-            <input type="number" id="newEpPort" value="7602" style="flex:0 0 100px">
-            <label style="min-width:auto;margin-left:8px">工作目录</label>
-            <input type="text" id="newEpWorkspace" placeholder="可选">
-          </div>
-          <div class="form-row" id="sshFields" style="display:none">
-            <label>SSH 地址</label>
-            <input type="text" id="newEpSsh" placeholder="user@192.168.1.100">
-          </div>
-          <button class="btn-primary" id="btnAddEndpoint" style="margin-top:4px">添加端</button>
-        </div>
-      </div>
-
-      <!-- ===== 运行与用量 ===== -->
-      <div class="settings-section" data-sec="runtime">
-        <div class="settings-hint">以下配置直接读写当前端 DSH 的 settings.yaml，修改后需重启 DSH 生效。启动器不做统计，仅展示 DSH 原生配额与已用数据。</div>
-
-                <h3>DSH settings.yaml 编辑器</h3>
-        <div class="setting-item">
-          <div class="si-desc">直接读写 DeepSeek 官方 DSH 的 settings.yaml，修改后需重启 DSH 生效。</div>
-          <textarea id="dshSettingsText" rows="14" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--border-color);border-radius:3px;font-family:Consolas,monospace;font-size:12px;line-height:1.5;resize:vertical"></textarea>
-          <div style="display:flex;gap:6px;margin-top:6px">
-            <button class="btn-small" id="btnReloadDshSettings">重新加载</button>
-            <button class="btn-primary" id="btnSaveDshSettings">保存</button>
-          </div>
-          <div class="si-desc">保存会覆盖原文件，请确认 YAML 格式正确后再保存。</div>
-        </div>
-
-        <h3 style="margin-top:20px">cordis.patch.yml 编辑器（插件注册层）</h3>
-        <div class="setting-item">
-          <div class="si-desc">直接读写 profile 的 cordis.patch.yml，用于手动调整插件的 insert/disable 配置，修改后需重启 DSH 生效。</div>
-          <textarea id="cordisPatchText" rows="10" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--border-color);border-radius:3px;font-family:Consolas,monospace;font-size:12px;line-height:1.5;resize:vertical"></textarea>
-          <div style="display:flex;gap:6px;margin-top:6px">
-            <button class="btn-small" id="btnReloadCordis">重新加载</button>
-            <button class="btn-primary" id="btnSaveCordis">保存</button>
-          </div>
-          <div class="si-desc">保存会覆盖原文件，请确认 YAML 格式正确后再保存。</div>
-        </div>
-
-        <h3 style="margin-top:20px">资源限额与用量</h3>
-        <div class="setting-item"><div class="si-desc">DSH 未暴露独立的资源限额配置，此项待官方能力确认后接入；下方用量概览同样待接入。</div></div>
-<h3 style="margin-top:20px">用量概览（当前端）</h3>
-        <div class="usage-item">
-          <div class="ui-label"><span>当日已消耗 Token</span><span class="val" id="usageToken">待接入</span></div>
-          <div class="usage-bar"><div class="fill" id="barToken" style="width:0%"></div></div>
-        </div>
-        <div class="usage-item">
-          <div class="ui-label"><span>当前活跃会话</span><span class="val" id="usageSession">待接入</span></div>
-          <div class="usage-bar"><div class="fill" id="barSession" style="width:0%"></div></div>
-        </div>
-        <div class="usage-item">
-          <div class="ui-label"><span>今日插件总调用</span><span class="val" id="usagePlugin">待接入</span></div>
-          <div class="usage-bar"><div class="fill" id="barPlugin" style="width:0%"></div></div>
-        </div>
-        <div style="margin-top:10px">
-          <button class="btn-small" id="btnRefreshUsage">刷新用量</button>
-          <button class="btn-small" id="btnExportUsage" style="margin-left:6px">导出用量记录</button>
-        </div>
-      </div>
-
-      <!-- ===== 数据与维护 ===== -->
-      <div class="settings-section" data-sec="maintenance">
-        <h3>数据与备份</h3>
-        <div class="si-desc" style="margin-bottom:10px">浏览与管理启动器/DSH 的数据目录，导出/导入配置，备份配置以便回滚。此区域只查看与保存，不删除任何原始数据。</div>
-        <div class="action-grid">
-          <button data-open="sessions">打开 DSH 会话目录</button>
-          <button data-open="plugins">打开插件安装目录</button>
-          <button data-open="settings">打开 DSH 配置文件</button>
-          <button data-open="logs">打开启动器日志目录</button>
-          <button data-open="dshhome">打开 DSH_HOME 根目录</button>
-          <button data-open="trash">打开会话回收站</button>
-        </div>
-
-        <h3 style="margin-top:20px">配置导入导出</h3>
-        <div class="setting-item">
-          <div class="si-label"><span>导出范围</span></div>
-          <div style="margin-top:4px;font-size:12px">
-            <label style="display:block;margin-bottom:4px"><input type="checkbox" id="expLauncher" checked> 启动器偏好配置</label>
-            <label style="display:block;margin-bottom:4px"><input type="checkbox" id="expDsh" checked> 当前端 DSH 运行配置</label>
-            <label style="display:block;margin-bottom:4px"><input type="checkbox" id="expEndpoints" checked> 多端配置列表</label>
-          </div>
-        </div>
-        <div style="display:flex;gap:6px">
-          <button class="btn-normal" id="btnExportConfig">导出配置</button>
-          <button class="btn-normal" id="btnImportConfig">导入配置</button>
-        </div>
-        <div class="si-desc" style="margin-top:6px">导入会覆盖勾选范围内的同名配置项（未勾选的项保持当前值不变）。</div>
-
-        <h3 style="margin-top:20px">配置备份</h3>
-        <div class="si-desc" style="margin-bottom:10px">修改插件或配置可能导致 DSH 启动失败。启动器会在每次修改配置前自动备份，连续 2 次启动失败时自动恢复最近备份。</div>
-        <div class="setting-item">
-          <button class="btn-small" id="btnBackupNow">立即备份当前配置</button>
-          <div class="si-desc">把 settings.yaml 与 cordis.patch.yml 复制到备份目录（保留最近 5 份），供出问题时回滚。</div>
-        </div>
-        <div class="setting-item">
-          <div class="si-label"><span>配置备份历史（最近 5 份）</span></div>
-          <div id="backupList" style="margin-top:6px;font-size:12px;max-height:160px;overflow-y:auto">
-            <div class="si-desc">加载中...</div>
-          </div>
-        </div>
-
-        <h3 style="margin-top:20px">修复与恢复</h3>
-        <div class="si-desc" style="margin-bottom:10px">当 DSH 启动失败或插件配置把它搞坏时，从这里恢复：安全模式用空配置排查，回退 bundle 快照还原可用插件列表，或重装/卸载 DSH 本体。</div>
-        <div class="setting-item">
-          <button class="btn-small" id="btnSafeMode">安全模式启动（空配置）</button>
-          <button class="btn-small" id="btnExitSafeMode" style="margin-left:6px;display:none">退出安全模式（恢复原配置）</button>
-          <div class="si-desc">临时把当前配置移开、用默认配置启动，用于排查配置/插件问题；退出后恢复原配置。</div>
-        </div>
-        <div class="setting-item">
-          <button class="btn-normal" id="btnRestoreBundleSnapshot">回退 bundle 列表（上次可用快照）</button>
-          <div class="si-desc">把 profile 的 dsh.profile.bundles 与依赖回退到最近一次启动自检通过的快照，修复第三方插件导致的启动失败。</div>
-        </div>
-        <div class="setting-item">
-          <button class="btn-normal" id="btnReinstallDsh">重装 DSH（卸载后装最新版）</button>
-          <button class="btn-danger" id="btnUninstallDsh">卸载 DSH</button>
-          <div class="si-desc">遇到无法解决的问题时重装 DSH 本体；数据目录 %APPDATA%\dsh-launcher 不会被删除，重装后可恢复会话与配置。</div>
-        </div>
-
-        <div class="reset-zone">
-          <h4>危险操作区</h4>
-          <p style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">重置操作不可撤销，请谨慎操作。</p>
-          <button class="btn-small" id="btnResetUI">仅重置外观与偏好</button>
-          <button class="btn-small" id="btnResetEndpoints">仅重置多端列表</button>
-          <button class="btn-small" id="btnResetDsh">仅重置当前端 DSH 配置</button>
-          <button class="btn-danger" id="btnResetAll">重置全部配置</button>
-        </div>
-      </div>
-
-      <div class="settings-section" data-sec="about">
-        <h3>环境信息</h3>
-        <div id="envInfo"><div class="si-desc">加载中...</div></div>
-        <div class="si-desc" style="margin-top:8px">这些路径用于排查启动、插件与会话问题。点击“打开”在资源管理器中定位，点击“复制”复制到剪贴板。</div>
-      </div>
-
     </div>
-  </div>
+    <div class="header-right">
+      <div class="status-indicator" title="DSH 运行状态">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">DSH 未运行</span>
+      </div>
+      <button class="btn-small" id="btnOpenSettings" title="打开设置">⚙ 设置</button>
+    </div>
+  </header>
+
+  <!-- 主导航 -->
+  <nav class="tab-bar">
+    <button class="tab-btn active" data-tab="console">控制台</button>
+    <button class="tab-btn" data-tab="sessions">会话管理</button>
+    <button class="tab-btn" data-tab="endpoints">多端管理</button>
+    <button class="tab-btn" data-tab="capabilities">能力中心</button>
+  </nav>
+
+  <main class="app-main">
+
+    <!-- ========== 控制台：左控制卡 + 右日志 ========== -->
+    <section class="tab-panel active" data-tab="console">
+      <div class="console-grid">
+        <aside class="console-side">
+
+          <div class="card control-card">
+            <div class="card-title">
+              <span>DSH 服务</span>
+              <span class="card-tag" id="ctrlEpType">Windows</span>
+            </div>
+            <div class="ctrl-status-row">
+              <span class="ctrl-status-dot" id="ctrlStatusDot"></span>
+              <span id="ctrlStatusText">未运行</span>
+            </div>
+            <div class="ctrl-url">
+              <input type="text" id="urlInput" value="http://127.0.0.1:3080/" readonly spellcheck="false">
+              <button class="btn-small" id="btnCopyUrl" title="复制访问地址">复制</button>
+            </div>
+            <div class="ctrl-actions">
+              <div class="ca-row">
+                <button class="btn-primary" id="btnStart" style="flex:1">启动 DSH</button>
+                <button class="btn-normal" id="btnStop" disabled>停止</button>
+                <button class="btn-danger" id="btnForceStop" title="强制结束端口上的 DSH 进程（含外部实例）">强停</button>
+              </div>
+              <div class="ca-row">
+                <button class="btn-normal" id="btnOpenBrowserMain">打开界面</button>
+                <button class="btn-normal" id="btnOpenLogDir2">日志目录</button>
+                <button class="btn-normal" id="btnHideTray">最小化托盘</button>
+              </div>
+            </div>
+            <div class="ctrl-meta">
+              <div class="cm-row" title="点击复制安装目录">
+                <span class="cm-k">安装目录</span>
+                <span class="cm-v" id="ctrlInstallDir">检测中...</span>
+                <button class="cm-copy" id="btnCopyInstall" title="复制">⧉</button>
+              </div>
+              <div class="cm-row" title="点击复制版本号">
+                <span class="cm-k">DSH 版本</span>
+                <span class="cm-v" id="ctrlVersion">检测中...</span>
+                <button class="cm-copy" id="btnCopyVersion" title="复制">⧉</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card tip-card">
+            <div class="card-title">提示</div>
+            <ul>
+              <li>端口被占用时默认<em>自动接管</em>已有实例（可在设置中改策略）</li>
+              <li>安装/卸载 DSH 本体请到「设置 → 关于」</li>
+              <li>WSL 端可在「多端管理」扫描添加</li>
+            </ul>
+          </div>
+        </aside>
+
+        <section class="card log-card">
+          <div class="log-toolbar">
+            <span class="log-title">实时日志</span>
+            <span class="log-count" id="logLineCount">0</span>
+            <span class="flex-spacer"></span>
+            <span class="log-clear" id="clearLog">清空</span>
+            <span class="log-clear" id="copyLog">复制</span>
+            <span class="log-clear" id="exportLog">导出</span>
+          </div>
+          <div class="log-box" id="logContent">等待启动 DSH 基座...</div>
+        </section>
+      </div>
+    </section>
+
+    <!-- ========== 会话管理 ========== -->
+    <section class="tab-panel" data-tab="sessions">
+      <div class="panel-head">
+        <span class="panel-title">会话管理</span>
+        <span class="panel-hint">读取 DSH_HOME 下按工作区分组的会话；删除进入回收站可恢复</span>
+      </div>
+      <div class="session-toolbar">
+        <button class="btn-small" id="btnRefreshSessions">刷新</button>
+        <button class="btn-danger" id="btnDeleteSession">删除会话</button>
+        <button class="btn-small" id="btnOpenTrash">回收站</button>
+        <button class="btn-small" id="btnExportSession">导出</button>
+        <input type="text" id="sessionSearch" placeholder="搜索标题 / 工作区 / 会话内容（回车检索）" class="search-input">
+        <button class="btn-small" id="btnSearchSession">搜索</button>
+      </div>
+      <div class="session-layout">
+        <div class="session-list" id="sessionList">
+          <div class="session-empty">加载会话列表...</div>
+        </div>
+        <div class="session-detail" id="sessionDetail">
+          <div class="session-empty">选择左侧会话查看对话内容</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 多端管理（独立页） ========== -->
+    <section class="tab-panel" data-tab="endpoints">
+      <div class="panel-head">
+        <span class="panel-title">多端管理</span>
+        <span class="panel-hint">统一管理 Windows 与 WSL 各发行版中<em>所有</em>已安装的 DSH（含不在 PATH 中的，如 ~/node/bin/dsh）。SSH 远程端暂待开发。</span>
+      </div>
+      <div class="ep-toolbar">
+        <button class="btn-primary" id="btnScanEndpoints">自动扫描</button>
+        <button class="btn-small" id="btnRefreshEndpoints">刷新状态</button>
+      </div>
+      <div class="scan-progress" id="scanProgress" style="display:none">
+        <div class="sp-track"><div class="sp-bar"></div></div>
+        <span class="sp-text" id="scanProgressText">正在扫描...</span>
+      </div>
+      <div id="endpointList"></div>
+
+      <div class="card add-endpoint-card">
+        <div class="card-title">新建端</div>
+        <p class="si-desc" style="margin-bottom:10px">两种方式：手动添加已有的 DSH（路径需全英文），或直接安装一个新的 DSH 到指定目录（不影响全局安装，适合初次使用 / 单独测试）。</p>
+        <button class="btn-primary" id="btnOpenEndpointModal">＋ 新建端</button>
+      </div>
+    </section>
+
+    <!-- ========== 能力中心 ========== -->
+    <section class="tab-panel" data-tab="capabilities">
+      <div class="panel-head">
+        <span class="panel-title">能力中心</span>
+        <span class="panel-hint">插件是能力载体，技能与 MCP 是插件暴露的能力输出；数据读取自本机 Windows 的 DSH_HOME（默认 USERPROFILE\.dsh）</span>
+      </div>
+      <div class="sub-tab-group">
+        <div class="sub-tab-btn active" data-sub="plugin">插件管理</div>
+        <div class="sub-tab-btn" data-sub="skill">技能 Skill</div>
+        <div class="sub-tab-btn" data-sub="mcp">MCP 服务</div>
+      </div>
+
+      <!-- 插件 -->
+      <div class="sub-tab-content active" data-sub="plugin">
+        <div class="cap-toolbar">
+          <input type="text" id="pluginSearch" placeholder="搜索插件名称..." class="search-input">
+          <select id="pluginKindFilter">
+            <option value="">全部分类</option>
+            <option value="builtin">内置</option>
+            <option value="extension">扩展</option>
+            <option value="selfdev">自研</option>
+          </select>
+          <select id="pluginStatusFilter">
+            <option value="">全部状态</option>
+            <option value="enabled">已启用</option>
+            <option value="disabled">已禁用</option>
+          </select>
+          <select id="pluginSort">
+            <option value="" selected>默认排序</option>
+            <option value="name">名称</option>
+            <option value="version">版本</option>
+            <option value="author">作者</option>
+            <option value="kind">分类</option>
+          </select>
+          <button class="btn-small" id="btnPluginDir" title="切换排序方向">升序</button>
+          <button class="btn-small" id="btnSelectAllPlugins">全选</button>
+          <button class="btn-small" id="btnRefreshPlugin">刷新</button>
+          <button class="btn-small" id="btnImportPlugin">导入本地</button>
+          <button class="btn-primary" id="btnOpenMarket">插件市场</button>
+        </div>
+        <div id="pluginBatchBar" style="display:none;align-items:center;gap:8px;margin-bottom:8px;padding:8px 10px;background:#f0f5fb;border:1px solid var(--border-color);border-radius:4px;font-size:12px;flex-wrap:wrap">
+          <span id="pluginBatchCount">0</span> 个已选
+          <button class="btn-small" data-batch="enable">批量启用</button>
+          <button class="btn-small" data-batch="disable">批量禁用</button>
+          <button class="btn-danger" data-batch="uninstall">批量卸载</button>
+          <button class="btn-small" data-batch="clear">清除选择</button>
+        </div>
+        <div id="pluginList"></div>
+      </div>
+
+      <!-- Skill -->
+      <div class="sub-tab-content" data-sub="skill">
+        <div class="cap-toolbar">
+          <select id="skillFilter"><option value="">全部插件</option></select>
+          <label class="inline-check"><input type="checkbox" id="skillOnlyEnabled"> 只看已启用</label>
+          <button class="btn-small" id="btnRefreshSkill">刷新</button>
+        </div>
+        <div id="skillList"></div>
+      </div>
+
+      <!-- MCP -->
+      <div class="sub-tab-content" data-sub="mcp">
+        <div class="cap-toolbar">
+          <button class="btn-small" id="btnAddMcp">添加自定义 MCP</button>
+          <button class="btn-small" id="btnRefreshMcp">刷新状态</button>
+          <button class="btn-small" id="btnTestAllMcp">全部连接测试</button>
+        </div>
+        <div id="mcpList"></div>
+      </div>
+    </section>
+
+    <!-- ========== 设置（全屏页） ========== -->
+    <!-- ========== 设置抽屉（右上角小入口，侧滑浮层） ========== -->
+    <div class="settings-mask" id="settingsMask"></div>
+    <div class="settings-drawer" id="settingsDrawer">
+      <div class="settings-header">
+        <h2>设置</h2>
+        <button class="settings-close" id="settingsClose" title="关闭">&times;</button>
+      </div>
+      <div class="settings-body">
+        <nav class="set-nav">
+          <div class="set-nav-title">分区</div>
+          <div class="nav-item active" data-sec="general">通用</div>
+          <div class="nav-item" data-sec="appearance">外观</div>
+          <div class="nav-item" data-sec="runtime">运行配置</div>
+          <div class="nav-item" data-sec="maintenance">数据与维护</div>
+          <div class="nav-item" data-sec="about">关于</div>
+        </nav>
+        <div class="set-content">
+
+          <!-- 通用 -->
+          <div class="set-section active" data-sec="general">
+            <h3 class="sec-title">窗口与托盘</h3>
+            <div class="setting-item">
+              <div class="si-label"><span>关闭窗口行为</span></div>
+              <select id="closeBehavior">
+                <option value="tray">最小化到托盘</option>
+                <option value="quit">直接退出程序</option>
+              </select>
+            </div>
+            <div class="setting-item">
+              <div class="si-label"><span>单实例锁定</span><div class="switch on" id="swSingleInstance"></div></div>
+              <div class="si-desc">重复打开仅唤起现有窗口，不会启动多个实例。</div>
+            </div>
+            <div class="setting-item">
+              <div class="si-label"><span>记住窗口位置与大小</span><div class="switch on" id="swRememberWin"></div></div>
+            </div>
+            <div class="setting-item">
+              <div class="si-label"><span>窗口置顶</span><div class="switch" id="swAlwaysOnTop"></div></div>
+              <div class="si-desc">开启后启动器窗口始终显示在最前，方便随时查看日志与状态。</div>
+            </div>
+            <div class="setting-item">
+              <div class="si-label"><span>开机自启动</span><div class="switch" id="swAutoStart"></div></div>
+            </div>
+
+            <h3 class="sec-title">启动行为</h3>
+            <div class="setting-item">
+              <div class="si-label"><span>启动器打开时</span></div>
+              <select id="launchBehavior">
+                <option value="manual">手动启动 DSH</option>
+                <option value="auto">自动拉起当前端 DSH</option>
+              </select>
+            </div>
+            <div class="setting-item">
+              <div class="si-label"><span>DSH 启动后自动打开浏览器</span><div class="switch" id="swAutoBrowser"></div></div>
+              <div class="si-desc">开启后，DSH 就绪时自动用默认浏览器打开其网页；关闭则只启动服务，不自动打开。</div>
+            </div>
+            <div class="setting-item">
+              <div class="si-label"><span>端口占用策略</span></div>
+              <select id="portPolicy">
+                <option value="takeover">自动接管已有实例</option>
+                <option value="prompt">占用时报错</option>
+              </select>
+            </div>
+
+            <h3 class="sec-title">日志与缓存</h3>
+            <div class="setting-item">
+              <div class="si-label"><span>保存启动器日志</span><div class="switch on" id="swSaveLog"></div></div>
+              <div class="si-desc">写入 %APPDATA%\dsh-launcher\logs\launcher.log，超过 5MB 自动轮转。</div>
+            </div>
+            <div class="setting-item">
+              <div class="si-label"><span>日志保留天数</span></div>
+              <select id="logRetention">
+                <option value="7">7 天</option>
+                <option value="15" selected>15 天</option>
+                <option value="30">30 天</option>
+              </select>
+            </div>
+            <div class="setting-item">
+              <div style="display:flex;gap:6px">
+                <button class="btn-small" id="btnClearCache">清空启动器缓存</button>
+                <button class="btn-small" id="btnOpenLogDir">打开日志目录</button>
+              </div>
+            </div>
+
+            <h3 class="sec-title">界面缩放</h3>
+            <div class="setting-item">
+              <div class="si-label"><span>缩放比例</span><span class="range-val" id="uiZoomVal">100%</span></div>
+              <input type="range" id="uiZoom" min="80" max="130" step="5" value="100">
+              <div class="si-desc">调整整体界面缩放；默认 100% 为原始尺寸。锁定后滑块不可调，防止误改。</div>
+            </div>
+            <div class="setting-item">
+              <div class="si-label"><span>锁定缩放</span><div class="switch" id="swLockZoom"></div></div>
+            </div>
+            <div class="setting-item">
+              <button class="btn-small" id="btnResetZoom">恢复默认（100%）</button>
+            </div>
+          </div>
+
+          <!-- 外观：看板娘 -->
+          <div class="set-section" data-sec="appearance">
+            <h3 class="sec-title">看板娘背景</h3>
+            <div class="setting-item">
+              <div class="si-label"><span>启用看板娘背景</span><div class="switch on" id="swKanban"></div></div>
+              <div class="si-desc">启动器界面装饰组件，不属于 DSH 插件体系。关闭后不再渲染图片。</div>
+            </div>
+            <div class="setting-item">
+              <div class="si-label"><span>显示尺寸</span><span class="range-val" id="kanbanSizeVal">340px</span></div>
+              <input type="range" id="kanbanSize" min="120" max="480" value="340">
+              <div class="si-desc">调整角色画面宽度，尺寸过大易遮挡操作区。</div>
+            </div>
+            <div class="setting-item">
+              <div class="si-label"><span>透明度</span><span class="range-val" id="kanbanOpacityVal">0.38</span></div>
+              <input type="range" id="kanbanOpacity" min="10" max="60" value="38">
+              <div class="si-desc">数值越高画面越清晰，过高会干扰文字阅读。</div>
+            </div>
+            <div class="setting-item">
+              <div class="si-label"><span>停靠位置</span></div>
+              <select id="kanbanPosition">
+                <option value="rb">右下角</option>
+                <option value="lb">左下角</option>
+              </select>
+              <div style="display:flex;gap:6px;margin-top:6px">
+                <button class="btn-small" id="btnEditKanbanPos">编辑位置</button>
+                <button class="btn-small" id="btnLockKanbanPos">确定位置</button>
+              </div>
+              <div class="si-desc">点击"编辑位置"后可自由拖拽看板娘，拖到合适位置后点"确定位置"锁定。</div>
+            </div>
+            <div class="setting-item">
+              <div class="si-label"><span>智能避让</span><div class="switch" id="swKanbanAvoid"></div></div>
+              <div class="si-desc">开启后看板娘自动向下偏移，避开日志区域底部。</div>
+            </div>
+            <div class="setting-item">
+              <div class="si-label"><span>自定义图片</span></div>
+              <div style="display:flex;gap:6px;margin-top:4px">
+                <button class="btn-small" id="btnKanbanPick">选择图片</button>
+                <button class="btn-small" id="btnKanbanReset">恢复默认</button>
+              </div>
+              <div class="si-desc">支持 PNG/JPG，建议使用透明背景素材。</div>
+            </div>
+          </div>
+
+          <!-- 运行配置 -->
+          <div class="set-section" data-sec="runtime">
+            <h3 class="sec-title">当前模型</h3>
+            <div class="setting-item">
+              <div class="si-label"><span>DSH 默认模型</span><span class="range-val" id="curModel">读取中...</span></div>
+              <div class="si-desc">来自 settings.yaml 的 agent-default-model。DSH 支持多种 provider：deepseek-official（官方）、本地 Ollama（ollama，如本地 Qwen 等模型）、以及通过兼容网关接入的其它服务。</div>
+            </div>
+
+            <h3 class="sec-title">DSH settings.yaml 编辑器</h3>
+            <div class="setting-item">
+              <div class="si-desc">直接读写当前端 DSH 的 settings.yaml，保存前自动备份，修改后需重启 DSH 生效。</div>
+              <textarea id="dshSettingsText" rows="14" class="code-editor"></textarea>
+              <div style="display:flex;gap:6px;margin-top:6px">
+                <button class="btn-small" id="btnReloadDshSettings">重新加载</button>
+                <button class="btn-primary" id="btnSaveDshSettings">保存</button>
+              </div>
+              <div class="si-desc">保存会覆盖原文件，请确认 YAML 格式正确后再保存（保存前会自动备份）。</div>
+            </div>
+
+            <h3 class="sec-title">cordis.patch.yml 编辑器（插件注册层）</h3>
+            <div class="setting-item">
+              <div class="si-desc">读写 profile 的 cordis.patch.yml，用于手动调整插件的 insert/disable 配置，保存前自动备份，修改后需重启 DSH 生效。</div>
+              <textarea id="cordisPatchText" rows="10" class="code-editor"></textarea>
+              <div style="display:flex;gap:6px;margin-top:6px">
+                <button class="btn-small" id="btnReloadCordis">重新加载</button>
+                <button class="btn-primary" id="btnSaveCordis">保存</button>
+              </div>
+            </div>
+
+            <h3 class="sec-title">用量</h3>
+            <div class="setting-item">
+              <div class="si-desc">DSH 未暴露独立的资源限额与用量统计，此项待官方能力确认后接入。</div>
+            </div>
+            <div class="usage-item">
+              <div class="ui-label"><span>当日已消耗 Token</span><span class="val" id="usageToken">待接入</span></div>
+              <div class="usage-bar"><div class="fill" id="barToken" style="width:0%"></div></div>
+            </div>
+            <div class="usage-item">
+              <div class="ui-label"><span>当前活跃会话</span><span class="val" id="usageSession">待接入</span></div>
+              <div class="usage-bar"><div class="fill" id="barSession" style="width:0%"></div></div>
+            </div>
+            <div class="usage-item">
+              <div class="ui-label"><span>今日插件总调用</span><span class="val" id="usagePlugin">待接入</span></div>
+              <div class="usage-bar"><div class="fill" id="barPlugin" style="width:0%"></div></div>
+            </div>
+            <div style="margin-top:10px">
+              <button class="btn-small" id="btnRefreshUsage">刷新用量</button>
+              <button class="btn-small" id="btnExportUsage" style="margin-left:6px">导出用量记录</button>
+            </div>
+          </div>
+
+          <!-- 数据与维护 -->
+          <div class="set-section" data-sec="maintenance">
+            <h3 class="sec-title">数据目录</h3>
+            <div class="si-desc" style="margin-bottom:10px">快速打开启动器与 DSH 的数据目录（此区域只查看与保存，不删除任何原始数据）。</div>
+            <div class="action-grid">
+              <button data-open="sessions">打开 DSH 会话目录</button>
+              <button data-open="plugins">打开插件安装目录</button>
+              <button data-open="settings">打开 DSH 配置文件</button>
+              <button data-open="logs">打开启动器日志目录</button>
+              <button data-open="dshhome">打开 DSH_HOME 根目录</button>
+              <button data-open="trash">打开会话回收站</button>
+            </div>
+
+            <h3 class="sec-title">配置导入导出</h3>
+            <div class="setting-item">
+              <div class="si-label"><span>导出范围</span></div>
+              <div style="margin-top:4px;font-size:12px">
+                <label style="display:block;margin-bottom:4px"><input type="checkbox" id="expLauncher" checked> 启动器偏好配置</label>
+                <label style="display:block;margin-bottom:4px"><input type="checkbox" id="expDsh" checked> 当前端 DSH 运行配置</label>
+                <label style="display:block;margin-bottom:4px"><input type="checkbox" id="expEndpoints" checked> 多端配置列表</label>
+              </div>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button class="btn-normal" id="btnExportConfig">导出配置</button>
+              <button class="btn-normal" id="btnImportConfig">导入配置</button>
+            </div>
+            <div class="si-desc" style="margin-top:6px">导入会覆盖勾选范围内的同名配置项（未勾选的项保持当前值不变）。</div>
+
+            <h3 class="sec-title">配置备份</h3>
+            <div class="si-desc" style="margin-bottom:10px">修改插件或配置可能导致 DSH 启动失败。启动器会在每次修改配置前自动备份（保留最近 5 份），连续 2 次启动失败时自动恢复最近备份。</div>
+            <div class="setting-item">
+              <button class="btn-small" id="btnBackupNow">立即备份当前配置</button>
+              <div class="si-desc">把 settings.yaml 与 cordis.patch.yml 复制到备份目录，供出问题时回滚。</div>
+            </div>
+            <div class="setting-item">
+              <div class="si-label"><span>配置备份历史（最近 5 份）</span></div>
+              <div id="backupList" style="margin-top:6px;font-size:12px;max-height:160px;overflow-y:auto">
+                <div class="si-desc">加载中...</div>
+              </div>
+            </div>
+
+            <h3 class="sec-title">修复与恢复</h3>
+            <div class="si-desc" style="margin-bottom:10px">当 DSH 启动失败或插件配置把它搞坏时，从这里恢复：安全模式用空配置排查，回退 bundle 快照还原可用插件列表。</div>
+            <div class="setting-item">
+              <button class="btn-small" id="btnSafeMode">安全模式启动（空配置）</button>
+              <button class="btn-small" id="btnExitSafeMode" style="margin-left:6px;display:none">退出安全模式（恢复原配置）</button>
+              <div class="si-desc">临时把当前配置移开、用默认配置启动，用于排查配置/插件问题；退出后恢复原配置。</div>
+            </div>
+            <div class="setting-item">
+              <button class="btn-normal" id="btnRestoreBundleSnapshot">回退 bundle 列表（上次可用快照）</button>
+              <div class="si-desc">把 profile 的 dsh.profile.bundles 与依赖回退到最近一次启动自检通过的快照，修复第三方插件导致的启动失败。</div>
+            </div>
+
+            <div class="reset-zone">
+              <h4>危险操作区</h4>
+              <p class="rz-desc">重置操作不可撤销，请谨慎操作。</p>
+              <button class="btn-small" id="btnResetUI">仅重置外观与偏好</button>
+              <button class="btn-small" id="btnResetEndpoints">仅重置多端列表</button>
+              <button class="btn-small" id="btnResetDsh">仅重置当前端 DSH 配置</button>
+              <button class="btn-danger" id="btnResetAll">重置全部配置</button>
+            </div>
+          </div>
+
+          <!-- 关于 -->
+          <div class="set-section" data-sec="about">
+            <h3 class="sec-title">DSH 本体管理</h3>
+            <div class="setting-item">
+              <div class="si-label"><span>安装位置</span></div>
+              <div class="si-desc">选择安装/更新/卸载目标：Windows 全局或 WSL 发行版。</div>
+              <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
+                <input type="text" id="dshInstallText" readonly class="ro-input" style="flex:1;min-width:220px">
+                <select id="dshInstallTarget" title="选择安装/更新位置">
+                  <option value="">Windows</option>
+                </select>
+                <button class="btn-small" id="btnCheckDshUpdate">检查更新</button>
+                <button class="btn-small" id="btnInstallDsh">安装 / 更新 DSH</button>
+                <button class="btn-normal" id="btnReinstallDsh">重装 DSH</button>
+                <button class="btn-danger" id="btnUninstallDsh">卸载 DSH</button>
+              </div>
+              <div class="si-desc">DSH 版本：<b id="dshVersionText">检测中...</b>。安装/重装/卸载需要联网；数据目录不会被删除。</div>
+            </div>
+
+            <h3 class="sec-title">环境信息</h3>
+            <div id="envInfo"><div class="si-desc">加载中...</div></div>
+            <div class="si-desc" style="margin-top:8px">这些路径用于排查启动、插件与会话问题。点击"打开"在资源管理器中定位，点击"复制"复制到剪贴板。</div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </main>
 </div>
 
-<!-- 插件市场弹窗（v2：借鉴主流插件市场设计——分类侧栏 + 发现区 + 详情抽屉） -->
+<!-- ==================== 插件市场弹窗 ==================== -->
 <div class="market-modal" id="marketModal">
   <div class="market-box">
     <div class="mb-head">
@@ -389,6 +595,14 @@
   <div class="confirm-box">
     <h4 id="confirmTitle">确认操作</h4>
     <p id="confirmMsg">确定要执行此操作吗？</p>
+    <div class="prompt-row" id="promptRow" style="display:none;margin-bottom:12px">
+      <input type="text" id="promptInput" class="search-input" style="width:100%" placeholder="输入内容...">
+    </div>
+    <div class="confirm-check-row" id="confirmCheckRow" style="display:none;margin-bottom:12px">
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+        <input type="checkbox" id="confirmCheck"> <span id="confirmCheckLabel"></span>
+      </label>
+    </div>
     <div class="cb-actions">
       <button class="btn-normal" id="confirmCancel">取消</button>
       <button class="btn-primary" id="confirmOk">确认</button>
@@ -396,179 +610,106 @@
   </div>
 </div>
 
-<!-- ===== 主窗口 ===== -->
-<div class="window-container">
-  <div class="win-header">
-    <h1>DSH Launcher</h1>
-    <div class="header-right">
-      <!-- 端切换器 -->
-      <div class="endpoint-switcher">
-        <div class="endpoint-btn" id="endpointBtn">
-          <span class="ep-dot" id="epDot"></span>
-          <span class="ep-name" id="epName">本地 Windows</span>
-        </div>
-        <div class="endpoint-dropdown" id="endpointDropdown"></div>
-      </div>
-      <button class="btn-settings" id="btnOpenSettings">设置</button>
-      <div class="status-indicator">
-        <span class="status-dot" id="statusDot"></span>
-        <span id="statusText">DSH 未运行</span>
-      </div>
+<!-- 新建端向导弹窗 -->
+<div class="market-modal" id="endpointModal">
+  <div class="market-box" style="width:580px;height:auto;max-height:90vh">
+    <div class="mb-head">
+      <div class="mb-title"><h3>新建端</h3><span class="mb-sub" id="epModalSub"></span></div>
+      <button class="settings-close" id="epModalClose" title="关闭">&times;</button>
     </div>
-  </div>
-
-  <div class="block">
-    <div class="addr-bar">
-      <span class="path-text" id="installPath">安装目录：检测中...</span>
-      <span class="link-url" id="openUrlLink">http://127.0.0.1:7602/</span>
-    </div>
-  </div>
-
-  <div class="block">
-    <div class="tab-group">
-      <div class="tab-btn active" data-tab="console">控制台</div>
-      <div class="tab-btn" data-tab="session">会话管理</div>
-      <div class="tab-btn" data-tab="capability">DSH 能力中心</div>
-    </div>
-  </div>
-
-  <!-- 控制台 -->
-  <div class="tab-content active" data-tab="console">
-    <div class="block">
-      <div class="control-card">
-        <div class="form-row">
-          <label>安装目录</label>
-          <input type="text" id="dshInstallText" value="检测中..." readonly>
-          <button class="btn-small" id="btnCopyInstall">复制</button>
-        </div>
-        <div class="form-row">
-          <label>访问地址</label>
-          <input type="text" id="urlInput" value="http://127.0.0.1:7602/" readonly>
-          <button class="btn-small" id="btnOpenBrowser">打开网页</button>
-          <button class="btn-small" id="btnCopyUrl">复制</button>
-        </div>
-        <div class="form-row">
-          <label>DSH 版本</label>
-          <input type="text" id="dshVersionText" value="检测中..." readonly>
-          <select id="dshInstallTarget" title="选择安装/更新位置" style="padding:5px 8px;border:1px solid var(--border-color);border-radius:3px;font-size:12px;max-width:160px">
-            <option value="">Windows</option>
-          </select>
-          <button class="btn-small" id="btnCopyVersion">复制</button>
-          <button class="btn-small" id="btnCheckDshUpdate">检查更新</button>
-          <button class="btn-small" id="btnInstallDsh">安装 / 更新 DSH</button>
-        </div>
-        <div class="btn-group">
-          <button class="btn-primary" id="btnStart">启动 DSH</button>
-          <button class="btn-normal" id="btnStop" disabled>停止 DSH</button>
-          <button class="btn-danger" id="btnForceStop">强制终止</button>
-          <button class="btn-normal" id="btnOpenLogDir2">打开日志目录</button>
-          <button class="btn-normal" id="btnOpenBrowserMain">打开浏览器</button>
-          <button class="btn-normal" id="btnHideTray">最小化到托盘</button>
-        </div>
-      </div>
-    </div>
-    <div class="log-wrap">
-      <div class="log-box" id="logContent">等待启动 DSH 基座...</div>
-      <div class="log-footer">
-        <span class="log-clear" id="clearLog">清空日志</span>
-        <span class="log-clear" id="copyLog">复制日志</span>
-        <span class="log-clear" id="exportLog">导出日志</span>
-        <span id="logLineCount">0</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- 会话管理 -->
-  <div class="tab-content" data-tab="session">
-    <div style="display:flex;gap:6px;padding:0 var(--safe-padding);margin-top:var(--gap-block)">
-      <button class="btn-small" id="btnRefreshSessions">刷新</button>
-      <button class="btn-danger" id="btnDeleteSession">删除会话</button>
-      <button class="btn-small" id="btnOpenTrash">回收站</button>
-      <button class="btn-small" id="btnExportSession">导出</button>
-      <button class="btn-small" id="btnSearchSession">搜索</button>
-      <input type="text" id="sessionSearch" placeholder="搜索标题 / 工作区 / 会话内容" style="flex:1;padding:5px 8px;border:1px solid var(--border-color);border-radius:3px;font-size:12px">
-    </div>
-    <div class="session-layout">
-      <div class="session-list" id="sessionList">
-        <div class="session-empty" style="padding:20px;text-align:center;color:var(--text-secondary);font-size:12px">加载会话列表...</div>
-      </div>
-      <div class="session-detail" id="sessionDetail">
-        <div class="session-empty">选择左侧会话查看对话内容</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- DSH 能力中心 -->
-  <div class="tab-content" data-tab="capability">
-    <div class="capability-wrap">
-      <div class="cap-hint">以下能力读取本机 Windows 的 DSH_HOME（`%APPDATA%\dsh-launcher\harness`）。插件是能力载体，技能与 MCP 是插件暴露的能力输出；WSL / SSH 端暂不支持此处数据读取。</div>
-      <div class="sub-tab-group">
-        <div class="sub-tab-btn active" data-sub="plugin">插件管理</div>
-        <div class="sub-tab-btn" data-sub="skill">技能 Skill</div>
-        <div class="sub-tab-btn" data-sub="mcp">MCP 服务</div>
+    <div class="ep-modal-body">
+      <div class="ep-mode-tabs">
+        <button class="mt-tab active" data-mode="manual">手动添加（已有 DSH）</button>
+        <button class="mt-tab" data-mode="install">安装新 DSH（创建即安装）</button>
       </div>
 
-      <!-- 插件 -->
-      <div class="sub-tab-content active" data-sub="plugin">
-        <div class="cap-toolbar">
-          <input type="text" id="pluginSearch" placeholder="搜索插件名称...">
-          <select id="pluginKindFilter">
-            <option value="">全部分类</option>
-            <option value="builtin">内置</option>
-            <option value="extension">扩展</option>
-            <option value="selfdev">自研</option>
-          </select>
-          <select id="pluginStatusFilter">
-            <option value="">全部状态</option>
-            <option value="enabled">已启用</option>
-            <option value="disabled">已禁用</option>
-          </select>
-          <select id="pluginSort">
-            <option value="" selected>默认排序</option>
-            <option value="name">名称</option>
-            <option value="version">版本</option>
-            <option value="author">作者</option>
-            <option value="kind">分类</option>
-          </select>
-          <button class="btn-small" id="btnPluginDir" title="切换排序方向">升序</button>
-          <button class="btn-small" id="btnSelectAllPlugins">全选</button>
-          <button class="btn-small" id="btnRefreshPlugin">刷新</button>
-          <button class="btn-small" id="btnImportPlugin">导入本地</button>
-          <button class="btn-small" id="btnOpenMarket">插件市场</button>
+      <!-- 模式一：手动添加 -->
+      <div class="ep-mode-panel active" data-mode="manual">
+        <div class="form-grid" style="max-width:none">
+          <div class="form-row">
+            <label>端名称</label>
+            <input type="text" id="newEpName" placeholder="如：WSL Ubuntu">
+          </div>
+          <div class="form-row">
+            <label>类型</label>
+            <select id="newEpType">
+              <option value="windows">Windows 本地</option>
+              <option value="wsl">WSL 子系统</option>
+              <option value="ssh" disabled>SSH 远程（待开发）</option>
+            </select>
+          </div>
+          <div class="form-row" id="newEpDistroRow" style="display:none">
+            <label>发行版</label>
+            <select id="newEpDistro"><option value="">（加载中...）</option></select>
+          </div>
+          <div class="form-row" id="newEpUserRow" style="display:none">
+            <label>账号</label>
+            <input type="text" id="newEpUser" placeholder="可选，默认发行版用户">
+          </div>
+          <div class="form-row" id="newEpPassRow" style="display:none">
+            <label>密码</label>
+            <input type="password" id="newEpPass" placeholder="可选（sudo 场景预留）">
+          </div>
+          <div class="form-row form-wide">
+            <label>DSH 路径</label>
+            <input type="text" id="newEpPath" placeholder="如：/usr/local/bin/dsh 或 %APPDATA%\npm\dsh.cmd">
+          </div>
+          <div class="form-row">
+            <label>端口</label>
+            <input type="number" id="newEpPort" value="3080">
+          </div>
+          <div class="form-row">
+            <label>工作目录</label>
+            <input type="text" id="newEpWorkspace" placeholder="可选">
+          </div>
+          <div class="form-row form-wide" id="sshFields" style="display:none">
+            <label>SSH 地址</label>
+            <input type="text" id="newEpSsh" placeholder="user@192.168.1.100">
+          </div>
         </div>
-        <div id="pluginBatchBar" style="display:none;align-items:center;gap:8px;margin-bottom:8px;padding:8px 10px;background:#f0f5fb;border:1px solid var(--border-color);border-radius:4px;font-size:12px;flex-wrap:wrap">
-          <span id="pluginBatchCount">0</span> 个已选
-          <button class="btn-small" data-batch="enable">批量启用</button>
-          <button class="btn-small" data-batch="disable">批量禁用</button>
-          <button class="btn-danger" data-batch="uninstall">批量卸载</button>
-          <button class="btn-small" data-batch="clear">清除选择</button>
+        <div class="ep-hint" id="manualHint">路径要求全英文（字母 / 数字 / _ - . / \ : ~ 与空格），含中文会红闪提示。</div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="btn-primary" id="btnAddEndpoint">添加端</button>
         </div>
-        <div id="pluginList"></div>
       </div>
 
-      <!-- Skill -->
-      <div class="sub-tab-content" data-sub="skill">
-        <div class="cap-toolbar">
-          <select id="skillFilter"><option value="">全部插件</option></select>
-          <label><input type="checkbox" id="skillOnlyEnabled"> 只看已启用</label>
-          <button class="btn-small" id="btnRefreshSkill">刷新</button>
+      <!-- 模式二：安装新 DSH -->
+      <div class="ep-mode-panel" data-mode="install">
+        <div class="form-grid" style="max-width:none">
+          <div class="form-row">
+            <label>安装目标</label>
+            <select id="instTarget">
+              <option value="dir">Windows 自定义目录</option>
+              <option value="wsl">WSL 发行版</option>
+            </select>
+          </div>
+          <div class="form-row" id="instDistroRow" style="display:none">
+            <label>发行版</label>
+            <select id="instDistro"><option value="">（加载中...）</option></select>
+          </div>
+          <div class="form-row form-wide">
+            <label>安装目录</label>
+            <input type="text" id="instPath" placeholder="Windows: D:\tools\dsh-test   WSL: ~/dsh-test">
+          </div>
+          <div class="form-row form-wide">
+            <label>端名称</label>
+            <input type="text" id="instName" placeholder="留空自动生成，如「测试端」">
+          </div>
         </div>
-        <div id="skillList"></div>
-      </div>
-
-      <!-- MCP -->
-      <div class="sub-tab-content" data-sub="mcp">
-        <div class="cap-toolbar">
-          <button class="btn-small" id="btnAddMcp">添加自定义 MCP</button>
-          <button class="btn-small" id="btnRefreshMcp">刷新状态</button>
-          <button class="btn-small" id="btnTestAllMcp">全部连接测试</button>
+        <div class="ep-hint" id="installHint">目录要求全英文，含中文会红闪提示。安装到指定目录，<b>不会影响</b>现有的全局安装 —— 适合初次使用或再装一个用于测试。</div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="btn-primary" id="btnInstallNewDsh">安装并创建端</button>
         </div>
-        <div id="mcpList"></div>
       </div>
     </div>
   </div>
 </div>
 
-<script src="app.js"></script>
+<script src="core.js"></script>
+<script src="endpoints.js"></script>
+<script src="console.js"></script>
+<script src="sessions.js"></script>
+<script src="capabilities.js"></script>
+<script src="settings.js"></script>
 </body>
 </html>

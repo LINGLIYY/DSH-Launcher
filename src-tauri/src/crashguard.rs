@@ -19,10 +19,7 @@ pub struct ConfigBackup {
 }
 
 fn dsh_home() -> PathBuf {
-    let base = std::env::var("APPDATA").unwrap_or_else(|_| "C:\\".to_string());
-    PathBuf::from(base)
-        .join("dsh-launcher")
-        .join("harness")
+    PathBuf::from(crate::default_dsh_home())
 }
 
 fn backup_dir() -> PathBuf {

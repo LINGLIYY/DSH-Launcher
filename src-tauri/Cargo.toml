@@ -1,6 +1,6 @@
 [package]
 name = "dsh-launcher"
-version = "1.0.1"
+version = "1.0.2"
 description = "DSH Launcher - lightweight Tauri launcher for DeepSeek Harness"
 authors = ["LINGLIYY"]
 edition = "2021"
