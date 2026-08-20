@@ -107,6 +107,9 @@
       card.className = "endpoint-card" + (e.active ? " active" : "");
       const statusCls = e.status === "running" ? "badge-on" : e.status === "error" ? "badge-err" : "badge-off";
       const statusTxt = e.status === "running" ? "运行中" : e.status === "error" ? "异常" : e.status === "unknown" ? "未知" : "已停止";
+      const ver = e.version && e.version !== "未检测" ? e.version : "未检测";
+      const upstream = e.upstreamVersion ? ` · 上游最新 v${escapeHtml(e.upstreamVersion)}` : "";
+      const upd = e.updateAvailable ? `<span class="status-badge badge-upd">可更新 v${escapeHtml(e.updateAvailable)}</span>` : "";
       card.innerHTML = `
         <div class="ec-head">
           <div>
@@ -119,13 +122,14 @@
         <div class="ec-meta">
           类型：${escapeHtml(typeLabel(e.type))}${e.distro ? `（${escapeHtml(e.distro)}）` : ""}${e.ssh ? ` · ${escapeHtml(e.ssh)}` : ""}<br>
           DSH 路径：${escapeHtml(e.path)}<br>
-          端口：${escapeHtml(String(e.port))} · 版本：${escapeHtml(e.version || "未检测")}<br>
+          端口：${escapeHtml(String(e.port))} · 当前 v${escapeHtml(ver)}${upstream} ${upd}<br>
           工作目录：${escapeHtml(e.workspace || "未设置")}
         </div>
         <div class="ec-actions">
           ${e.active ? "" : `<button class="btn-small" data-act="activate" data-id="${escapeHtml(e.id)}">切换到此端</button>`}
           <button class="btn-small" data-act="edit" data-id="${escapeHtml(e.id)}">编辑</button>
           <button class="btn-small" data-act="ping" data-id="${escapeHtml(e.id)}">检测连通</button>
+          ${e.updateAvailable ? `<button class="btn-normal upd-btn" data-act="update" data-id="${escapeHtml(e.id)}">更新 v${escapeHtml(e.updateAvailable)}</button>` : ""}
           <button class="btn-danger" data-act="remove" data-id="${escapeHtml(e.id)}">删除</button>
         </div>`;
       box.appendChild(card);
@@ -148,8 +152,121 @@
             appendLog(`[多端] ${e.name} 检测失败`, "log-error");
           });
         }
+        else if (act === "update") { updateEndpointDsh(e); }
         else if (act === "remove") { removeEndpoint(e); }
       };
+    });
+  }
+
+  /* ---------- 版本比较：0.1.0-rc.7 语义（数字逐段比，rc 后缀比数字） ---------- */
+  function dshCmpVersion(a, b) {
+    const parse = s => {
+      const m = String(s || "").trim().match(/^(\d+)\.(\d+)\.(\d+)(?:-rc\.?(\d+))?/i);
+      if (!m) return null;
+      return [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10), m[4] ? parseInt(m[4], 10) : Infinity];
+    };
+    const pa = parse(a), pb = parse(b);
+    if (!pa || !pb) return 0;
+    for (let i = 0; i < 4; i++) {
+      if (pa[i] !== pb[i]) return pa[i] > pb[i] ? 1 : -1;
+    }
+    return 0;
+  }
+
+  /* ---------- 静默版本检测：读上游 latest（缓存 5 分钟）+ 逐个端探测本地版本 ---------- */
+  let npmLatestCache = { v: "", t: 0 };
+  async function fetchNpmLatest() {
+    const now = Date.now();
+    if (npmLatestCache.v && now - npmLatestCache.t < 5 * 60 * 1000) return npmLatestCache.v;
+    try {
+      const r = await fetch("https://registry.npmjs.org/@deepseek-ai/dsh/latest");
+      if (!r.ok) return npmLatestCache.v || "";
+      const d = await r.json();
+      npmLatestCache = { v: String(d.version || "").trim(), t: now };
+      return npmLatestCache.v;
+    } catch (err) { return npmLatestCache.v || ""; }
+  }
+
+  // 检测单个端（静默）：填充 e.version 与 e.updateAvailable；返回是否有更新
+  async function probeEndpointVersion(e) {
+    if (!e || !e.path) return false;
+    let local = "";
+    try {
+      const v = await invoke("dsh_version_for", { target: { etype: e.type, distro: e.distro || "", path: e.path } });
+      local = String(v || "").trim();
+    } catch (err) { /* 探测失败保持原值 */ }
+    if (!local) return false;
+    e.version = local;
+    const latest = await fetchNpmLatest();
+    if (latest) e.upstreamVersion = latest;
+    e.updateAvailable = (latest && dshCmpVersion(local, latest) < 0) ? latest : "";
+    return !!e.updateAvailable;
+  }
+
+  /* ---------- 启动自动版本检测：静默扫描所有端，有更新才提示 ---------- */
+  async function autoCheckVersions() {
+    const latest = await fetchNpmLatest();
+    if (!latest) return; // 网络不可用则保持静默，下次启动再试
+    const updatable = [];
+    for (const e of endpoints) {
+      try {
+        const has = await probeEndpointVersion(e);
+        if (has) updatable.push(e);
+      } catch (err) { /* 单个端失败不影响其他端 */ }
+    }
+    saveEndpoints(); renderEndpointList();
+    if (updatable.length) {
+      updatable.forEach(e => {
+        appendLog(`[版本] ${e.name}：v${e.version} → v${e.updateAvailable}，可在「多端管理」点「更新」`, "log-ready");
+      });
+    }
+  }
+
+  /* ---------- 更新端上的 DSH（自动识别全局/自定义目录） ---------- */
+  function updateEndpointDsh(e) {
+    const latest = e.updateAvailable || "";
+    const where = e.type === "wsl" ? `WSL 发行版「${e.distro || "?"}」` : "Windows";
+    showConfirm("更新 DSH", `将把「${e.name}」（${where}）的 DSH 更新到 v${latest}。\n\n提醒：\n· 需要联网，可能耗时几分钟\n· 会停止该端正在运行的 DSH\n· 数据目录与会话不受影响`, async () => {
+      appendLog(`[版本] 正在更新 ${e.name} 到 v${latest} ...`, "log-start");
+      try {
+        // 停止该端实例（如有）
+        try { await invoke("stop_harness", { force: true, endpoint_id: e.id }); } catch (err) { /* ignore */ }
+        // 判断安装方式：全局 vs 自定义目录
+        const p = String(e.path || "");
+        const lower = p.toLowerCase();
+        let result;
+        if (e.type === "wsl") {
+          const isGlobal = /\/node\/bin\/dsh$|\/usr\/local\/bin\/dsh$|\/n\/bin\/dsh$|\/\.nvm\/versions\/node\/[^/]+\/bin\/dsh$|\/bin\/dsh$/.test(lower);
+          if (isGlobal) {
+            result = await invoke("install_or_update_dsh", { distro: e.distro || "" });
+          } else {
+            // 自定义目录：~/dsh-test/bin/dsh → 前缀 ~/dsh-test
+            const prefix = p.replace(/\/bin\/dsh$/, "");
+            result = await invoke("install_dsh_to", { target: { kind: "wsl", distro: e.distro || "", path: prefix } });
+            result = (result && result.msg) || result;
+          }
+        } else {
+          const isGlobal = lower.includes("%appdata%\\npm") || lower.includes("appdata\\roaming\\npm") || !/\\dsh\.cmd$/.test(lower);
+          if (isGlobal || !p) {
+            result = await invoke("install_or_update_dsh", { distro: "" });
+          } else {
+            // 自定义目录：D:\tools\dsh-test\dsh.cmd → 前缀 D:\tools\dsh-test
+            const prefix = p.replace(/[\\/][^\\/]*$/, "");
+            result = await invoke("install_dsh_to", { target: { kind: "dir", distro: "", path: prefix } });
+            result = (result && result.msg) || result;
+          }
+        }
+        appendLog(`[版本] ${e.name} 更新完成：${result}`, "log-ready");
+        // 更新后静默重新检测
+        e.updateAvailable = "";
+        e.version = "";
+        saveEndpoints();
+        await probeEndpointVersion(e);
+        saveEndpoints(); renderEndpointList();
+        appendLog(`[版本] ${e.name} 当前版本：${e.version || "未知"}`, "log-stop");
+      } catch (err) {
+        appendLog(`[版本] ${e.name} 更新失败：${err}`, "log-error");
+      }
     });
   }
 
@@ -445,7 +562,11 @@
     const scanBtn = $("btnScanEndpoints");
     if (scanBtn) scanBtn.addEventListener("click", scanAll);
     const refreshBtn = $("btnRefreshEndpoints");
-    if (refreshBtn) refreshBtn.addEventListener("click", () => { renderEndpointList(); appendLog("[多端] 端状态已刷新", "log-stop"); });
+    if (refreshBtn) refreshBtn.addEventListener("click", () => {
+      renderEndpointList();
+      appendLog("[多端] 端状态已刷新", "log-stop");
+      autoCheckVersions(); // 顺带静默重扫版本
+    });
 
     // 新建端向导
     const ob = $("btnOpenEndpointModal");
@@ -459,6 +580,9 @@
     });
     wireManualAdd();
     wireInstallNew();
+
+    // 启动器启动后：后台静默扫描一次所有端的版本（有更新才提示）
+    setTimeout(autoCheckVersions, 2500);
   }
 
   window.DSH = Object.assign(window.DSH || {}, {

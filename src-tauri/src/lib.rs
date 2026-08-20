@@ -66,6 +66,8 @@ pub struct HarnessState {
 
 pub struct PrefsState {
     pub inner: Mutex<prefs::LauncherPrefs>,
+    /// 窗口位置实时保存的限频时间戳（Moved/Resized 高频事件不重复写盘）
+    pub last_window_save: std::sync::Mutex<Option<std::time::Instant>>,
 }
 
 /// 与官方 dsh CLI 保持一致：优先 DSH_HOME 环境变量，否则 USERPROFILE\.dsh
@@ -330,6 +332,67 @@ async fn wsl_distros() -> Vec<String> {
     tauri::async_runtime::spawn_blocking(capabilities::wsl_distros)
         .await
         .unwrap_or_default()
+}
+
+/// 探测指定端口是否已有可用的 DSH Web 实例（启动器启动后自动接管用）。
+#[tauri::command]
+async fn check_external(port: Option<u16>) -> Result<bool, String> {
+    let port = port.unwrap_or(3080);
+    tauri::async_runtime::spawn_blocking(move || harness::probe_port(port))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[derive(serde::Deserialize)]
+pub struct VersionProbeTarget {
+    pub etype: String, // "windows" | "wsl"
+    pub distro: String,
+    pub path: String, // dsh 可执行入口（Windows: xxx\dsh.cmd；WSL: /home/.../bin/dsh）
+}
+
+/// 获取任意端（含自定义目录安装）上 DSH 的真实版本，如 0.1.0-rc.7。
+#[tauri::command]
+async fn dsh_version_for(target: VersionProbeTarget) -> Result<String, String> {
+    let path = target.path.trim().to_string();
+    if path.is_empty() {
+        return Ok(String::new());
+    }
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        use std::os::windows::process::CommandExt;
+        if target.etype == "wsl" {
+            // 记录原状态：若发行版原本未运行，探测后 terminate，避免唤醒其自启服务（如 dsh-web）
+            let was_stopped = crate::capabilities::wsl_is_stopped(&target.distro);
+            // PATH 隔离 + base64 传输；dsh 的 shebang 依赖 node
+            let script = format!(
+                "export PATH=\"$HOME/node/bin:/usr/local/bin:/usr/bin:$PATH\"; \"{}\" --version 2>&1 | head -1",
+                path
+            );
+            let cmd = format!(
+                "echo {} | base64 -d | bash",
+                crate::capabilities::b64_encode(script.as_bytes())
+            );
+            let out = std::process::Command::new("wsl")
+                .args(["-d", &target.distro, "--", "bash", "-lc", &cmd])
+                .creation_flags(0x0800_0000)
+                .output();
+            if was_stopped {
+                crate::capabilities::wsl_terminate(&target.distro);
+            }
+            out
+        } else {
+            std::process::Command::new("cmd")
+                .args(["/C", &path, "--version"])
+                .creation_flags(0x0800_0000)
+                .output()
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let text = if !stdout.trim().is_empty() { stdout } else { stderr };
+    Ok(text.lines().next().unwrap_or("").trim().to_string())
 }
 
 #[tauri::command]
@@ -1052,6 +1115,7 @@ pub fn run() {
         })
         .manage(PrefsState {
             inner: Mutex::new(loaded_prefs),
+            last_window_save: std::sync::Mutex::new(None),
         })
         .setup(move |app| {
             setup_tray(app.handle())?;
@@ -1156,39 +1220,80 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let app = window.app_handle();
-                let state = app.state::<PrefsState>();
-                let p = state.inner.lock().unwrap().clone();
-                if p.remember_window {
-                    let maximized = window.is_maximized().unwrap_or(false);
-                    if !maximized {
-                        if let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) {
-                            // 允许负坐标；仅限制尺寸范围
-                            if (100..=3000).contains(&size.width)
-                                && (100..=2000).contains(&size.height)
-                            {
-                                let mut np = p.clone();
-                                np.window.x = Some(pos.x);
-                                np.window.y = Some(pos.y);
-                                np.window.width = size.width;
-                                np.window.height = size.height;
-                                *state.inner.lock().unwrap() = np.clone();
-                                let _ = prefs::save(&np);
+            match event {
+                // 实时保存窗口位置/大小（限频 800ms），托盘直接退出/异常退出也不丢
+                tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
+                    let app = window.app_handle();
+                    let state = app.state::<PrefsState>();
+                    let now = std::time::Instant::now();
+                    let due = {
+                        let last = state.last_window_save.lock().unwrap();
+                        last.map_or(true, |t| now.duration_since(t).as_millis() > 800)
+                    };
+                    if !due {
+                        return;
+                    }
+                    let remember = {
+                        let g = state.inner.lock().unwrap();
+                        g.remember_window
+                    };
+                    if remember {
+                        let maximized = window.is_maximized().unwrap_or(false);
+                        if !maximized {
+                            if let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) {
+                                if (100..=3000).contains(&size.width)
+                                    && (100..=2000).contains(&size.height)
+                                {
+                                    let np = {
+                                        let mut g = state.inner.lock().unwrap();
+                                        g.window.x = Some(pos.x);
+                                        g.window.y = Some(pos.y);
+                                        g.window.width = size.width;
+                                        g.window.height = size.height;
+                                        g.clone()
+                                    };
+                                    *state.last_window_save.lock().unwrap() = Some(now);
+                                    let _ = prefs::save(&np);
+                                }
                             }
                         }
                     }
                 }
-                if p.close_behavior == "quit" {
-                    let app2 = app.clone();
-                    tauri::async_runtime::spawn(async move {
-                        let _ = harness::stop(app2.clone(), false).await;
-                        app2.exit(0);
-                    });
-                } else {
-                    let _ = window.hide();
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    let app = window.app_handle();
+                    let state = app.state::<PrefsState>();
+                    let p = state.inner.lock().unwrap().clone();
+                    if p.remember_window {
+                        let maximized = window.is_maximized().unwrap_or(false);
+                        if !maximized {
+                            if let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) {
+                                // 允许负坐标；仅限制尺寸范围
+                                if (100..=3000).contains(&size.width)
+                                    && (100..=2000).contains(&size.height)
+                                {
+                                    let mut np = p.clone();
+                                    np.window.x = Some(pos.x);
+                                    np.window.y = Some(pos.y);
+                                    np.window.width = size.width;
+                                    np.window.height = size.height;
+                                    *state.inner.lock().unwrap() = np.clone();
+                                    let _ = prefs::save(&np);
+                                }
+                            }
+                        }
+                    }
+                    if p.close_behavior == "quit" {
+                        let app2 = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = harness::stop(app2.clone(), false).await;
+                            app2.exit(0);
+                        });
+                    } else {
+                        let _ = window.hide();
+                    }
                 }
+                _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -1226,6 +1331,8 @@ pub fn run() {
             scan_wsl,
             scan_terminals,
             wsl_distros,
+            check_external,
+            dsh_version_for,
             ping_endpoint,
             import_plugin,
             install_market_plugin,

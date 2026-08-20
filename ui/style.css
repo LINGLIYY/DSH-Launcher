@@ -616,6 +616,9 @@ select:focus { outline: none; border-color: var(--primary-blue); }
 .badge-on { background: #e8f7ee; color: #2e9e5f; }
 .badge-off { background: #eef1f5; color: #8a95a5; }
 .badge-err { background: #fdf1f1; color: var(--error-red); }
+.badge-upd { background: #fdf0e0; color: #c07a22; }
+.upd-btn { border-color: #9fd4b2; color: #2e9e5f; background: #eefaf2; font-weight: 600; }
+.upd-btn:hover { background: #dff5e8; }
 
 /* ---------- 设置抽屉（右上角小入口 · 侧滑浮层） ---------- */
 .settings-mask {

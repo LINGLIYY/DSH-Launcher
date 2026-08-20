@@ -143,6 +143,12 @@ pub fn open_url(url: &str) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// 探测端口上是否已有可用的 DSH Web 实例（只探测，不启动任何东西）。
+/// 用于启动器启动后自动接管外部已运行的实例。
+pub fn probe_port(port: u16) -> bool {
+    http_ready(&format!("http://127.0.0.1:{port}/"))
+}
+
 pub fn open_path(path: &Path) -> Result<(), String> {
     std::process::Command::new("explorer.exe")
         .arg(path)

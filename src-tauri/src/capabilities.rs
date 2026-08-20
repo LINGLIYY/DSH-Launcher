@@ -277,9 +277,15 @@ pub fn scan_wsl() -> Vec<WslInfo> {
         }
     }
 
+    // 记录原本未运行的发行版：扫描是只读探测，不应改变系统状态。
+    // 拉起 WSL 会触发发行版内自启服务（如 systemd 的 dsh-web.service），
+    // 扫描结束后把原本 Stopped 的发行版关回去，避免"扫描唤醒 dsh"。
+    let mut stopped: Vec<String> = Vec::new();
+
     for (distro, state, version) in distros {
         // 发行版处于 Stopped 时先拉起，并等它就绪（systemd 发行版冷启动可能较慢）
         if state.eq_ignore_ascii_case("Stopped") {
+            stopped.push(distro.clone());
             let _ = run_with_timeout(
                 std::process::Command::new("wsl").args(["-d", &distro, "--", "true"]),
                 40,
@@ -313,13 +319,54 @@ pub fn scan_wsl() -> Vec<WslInfo> {
             }
         }
     }
+    // 扫描完把原本未运行的发行版 terminate，恢复扫描前状态（自启服务随之停止）
+    for d in &stopped {
+        let _ = run_with_timeout(std::process::Command::new("wsl").args(["--terminate", d]), 15);
+    }
     out
+}
+
+/// 判断指定 WSL 发行版当前是否处于 Stopped 状态（只读探测）。
+pub(crate) fn wsl_is_stopped(distro: &str) -> bool {
+    let Some(out) = run_with_timeout(std::process::Command::new("wsl").args(["-l", "-v"]), 15) else {
+        return false;
+    };
+    if !out.status.success() {
+        return false;
+    }
+    let raw = if !out.stdout.is_empty() { out.stdout } else { out.stderr };
+    let text = decode_wsl(&raw);
+    for line in text.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.is_empty() {
+            continue;
+        }
+        let (name, state) = if parts.first() == Some(&"*") {
+            (
+                parts.get(1).unwrap_or(&"").to_string(),
+                parts.get(2).unwrap_or(&"").to_string(),
+            )
+        } else {
+            (
+                parts[0].to_string(),
+                parts.get(1).unwrap_or(&"").to_string(),
+            )
+        };
+        if name.eq_ignore_ascii_case(distro) {
+            return state.eq_ignore_ascii_case("Stopped");
+        }
+    }
+    false
+}
+
+/// 终止指定 WSL 发行版（恢复扫描/探测前的未运行状态，同时停掉其自启服务）。
+pub(crate) fn wsl_terminate(distro: &str) {
+    let _ = run_with_timeout(std::process::Command::new("wsl").args(["--terminate", distro]), 15);
 }
 
 /// 枚举当前机器上所有 WSL 发行版名（`wsl -l -q`，每行一个名字，无表头）。
 /// 用于"手动添加 WSL 端 / 安装新 DSH"时的发行版下拉选择，支持多子系统环境。
-pub fn wsl_distros() -> Vec<String> {
-    let Some(out) = run_with_timeout(std::process::Command::new("wsl").args(["-l", "-q"]), 20) else {
+pub fn wsl_distros() -> Vec<String> {    let Some(out) = run_with_timeout(std::process::Command::new("wsl").args(["-l", "-q"]), 20) else {
         return Vec::new();
     };
     if !out.status.success() {

@@ -239,6 +239,24 @@
     };
   }
 
+  /* ---------- 启动后自动接管：探测当前端端口是否已有 DSH 实例 ---------- */
+  async function autoTakeover() {
+    const e = ep();
+    if (!e) return;
+    try {
+      const running = await invoke("check_external", { port: e.port });
+      if (running) {
+        e.status = "running";
+        if (DSH.endpoints) DSH.endpoints.save();
+        appendLog(`[接管] 检测到 http://127.0.0.1:${e.port}/ 已有 DSH 实例（非本启动器启动），已自动接管`, "log-ready");
+        appendLog("[接管] 可点「停止」管理或「强制终止」结束它；点「打开界面」直接使用", "log-stop");
+        updateStatus(true, false);
+      }
+    } catch (err) {
+      // 探测失败静默（不打扰用户）
+    }
+  }
+
   /* ---------- 初始化 ---------- */
   function init() {
     wireStartStop();
@@ -251,6 +269,8 @@
     const e = ep();
     appendLog(`当前端：${e.name}（${DSH.endpoints.typeLabel ? DSH.endpoints.typeLabel(e.type) : e.type}）`, "log-stop");
     appendLog("提示：点击顶部端名称可快速切换端；「设置」中可配置偏好、多端、外观等", "log-stop");
+    // 自动接管检测（等界面与后端就绪）
+    setTimeout(autoTakeover, 1200);
   }
 
   window.DSH = Object.assign(window.DSH || {}, {
